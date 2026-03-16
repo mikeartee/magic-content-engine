@@ -2,7 +2,8 @@
 
 A scheduled, AWS-hosted agent application that automates weekly content research and generation. Built with the [Strands Agents SDK](https://github.com/strands-agents/sdk-python) (Python), deployed on [AgentCore Runtime](https://docs.aws.amazon.com/agentcore/), and orchestrated through two cooperating agents.
 
-<!-- MIKE: cold open, ~80 words. Why you built this, what problem it solves for you personally. -->
+Okay, So I built this content creation engine because as of 2026 I am an AWS Community Builder in the category "Ai Engineering". I needed a way to track things that combined my knowledge of years of content creation on YouTube, and the main problem I found was this: It's difficult to keep up to date, even with all the best RSS feeds and sign-ups to press sites. Hopefully, we can help solve this problem, using this app, and another application that another AWS Builder created to drag things out of the Git Repos I create. 
+Building in public, and getting articles/videos written is going to be instrumental in my learning journey. 
 
 ## What it does
 
@@ -181,7 +182,7 @@ Held items are checked at the start of each run. When a release date arrives, yo
 
 AgentCore is not yet available in the Auckland region (ap-southeast-4). The closest supported region is Sydney (ap-southeast-2). This engine deploys to Sydney for now. When AgentCore lands in Auckland, that will be worth a content run of its own.
 
-<!-- MIKE: closing, ~50 words. What's next, link to your dev.to, CTA. -->
+So, we'll be testing this out on my dev.to in the coming months to create content for our blog, and videos to come in the future. The main thrust of this project is to keep the human-in-the-loop. Keep an eye out for the blog posts on: https://dev.to/mikeartee
 
 ## Spec
 
@@ -189,4 +190,6 @@ The full requirements, design, and implementation plan live in `.kiro/specs/magi
 
 ## License
 
-<!-- MIKE: pick a license, ~10 words -->
+## License
+
+MIT — see [LICENSE](LICENSE) for details.
