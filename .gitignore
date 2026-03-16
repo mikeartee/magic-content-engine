@@ -1,0 +1,31 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+
+# Output
+output/
+
+# Local memory store
+.memory/
+
+# Pytest
+.pytest_cache/
+
+# Coverage
+htmlcov/
+.coverage

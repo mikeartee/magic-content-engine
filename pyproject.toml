@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "magic-content-engine"
+version = "0.1.0"
+description = "Automated weekly content research and generation engine"
+requires-python = ">=3.11"
+dependencies = [
+    "strands-agents",
+    "boto3",
+    "python-dotenv",
+]
+
+[project.optional-dependencies]
+dev = [
+    "hypothesis",
+    "pytest",
+]
+
+[tool.setuptools.packages.find]
+include = ["magic_content_engine*"]
