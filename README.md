@@ -2,7 +2,10 @@
 
 A scheduled, AWS-hosted agent application that automates weekly content research and generation. Built with the [Strands Agents SDK](https://github.com/strands-agents/sdk-python) (Python), deployed on [AgentCore Runtime](https://docs.aws.amazon.com/agentcore/), and orchestrated through two cooperating agents.
 
-Okay, So I built this content creation engine because as of 2026 I am an AWS Community Builder in the category "Ai Engineering". I needed a way to track things that combined my knowledge of years of content creation on YouTube, and the main problem I found was this: It's difficult to keep up to date, even with all the best RSS feeds and sign-ups to press sites. Hopefully, we can help solve this problem, using this app, and another application that another AWS Builder created to drag things out of the Git Repos I create. 
+I built this content creation engine because as of 2026 I am an AWS Community Builder in the category "AI Engineering". I needed a way to track things that combined my knowledge of years of content creation on YouTube, and the main problem I found was this: It's difficult to keep up-to-date, even with all the best RSS feeds and sign-ups to press sites. Hopefully, we can help solve this problem, using this app, and another application that another AWS Builder created to drag things out of the Git Repos I create. Then we'll smoosh them together. 
+
+This particular app is niched down on AI Engineering via AWS, but it can be easily modified for any type of search, just by changing the links in the `02-research-sources.md` steering file.
+
 Building in public, and getting articles/videos written is going to be instrumental in my learning journey. 
 
 ## What it does
@@ -187,8 +190,6 @@ So, we'll be testing this out on my dev.to in the coming months to create conten
 ## Spec
 
 The full requirements, design, and implementation plan live in `.kiro/specs/magic-content-engine/`. Built using Kiro's spec-driven development workflow.
-
-## License
 
 ## License
 
