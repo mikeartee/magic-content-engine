@@ -11,6 +11,20 @@ load_dotenv()
 S3_BUCKET: str = os.getenv("S3_BUCKET", "magic-content-dev")
 S3_KEY_PREFIX: str = os.getenv("S3_KEY_PREFIX", "output/")
 
+# --- mce-second-brain (bullpen architecture) ---
+# S3 bucket for the bullpen pipeline. The output/ prefix is hardcoded in the
+# admin importer — do not change MCE_S3_KEY_PREFIX without updating the importer.
+MCE_SECOND_BRAIN_BUCKET: str = os.getenv("MCE_SECOND_BRAIN_BUCKET", "mce-second-brain")
+MCE_S3_KEY_PREFIX: str = os.getenv("MCE_S3_KEY_PREFIX", "output/")
+MCE_S3_AMI_CONTEXT_PREFIX: str = os.getenv("MCE_S3_AMI_CONTEXT_PREFIX", "ami-context/")
+MCE_S3_ARCHIVE_PREFIX: str = os.getenv("MCE_S3_ARCHIVE_PREFIX", "archive/")
+
+# DynamoDB tables (all use on-demand billing / PAY_PER_REQUEST)
+MCE_CHECKPOINTS_TABLE: str = os.getenv("MCE_CHECKPOINTS_TABLE", "mce-checkpoints")
+MCE_TOPIC_COVERAGE_TABLE: str = os.getenv("MCE_TOPIC_COVERAGE_TABLE", "mce-topic-coverage")
+MCE_DEDUPLICATION_TABLE: str = os.getenv("MCE_DEDUPLICATION_TABLE", "mce-deduplication")
+MCE_HELD_ITEMS_TABLE: str = os.getenv("MCE_HELD_ITEMS_TABLE", "mce-held-items")
+
 # --- Steering ---
 STEERING_BASE_PATH: str = os.getenv("STEERING_BASE_PATH", ".kiro/steering/")
 
