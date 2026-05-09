@@ -29,7 +29,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Protocol
 from xml.etree import ElementTree
@@ -38,6 +38,7 @@ import boto3
 import requests
 
 from magic_content_engine import config
+from magic_content_engine.bullpen.models import ResearchBrief, ScoredArticle
 from magic_content_engine.errors import ErrorCollector, StepError
 
 logger = logging.getLogger(__name__)
@@ -54,54 +55,6 @@ _MAX_CRAWL_ATTEMPTS: int = 3
 
 # Default request timeout in seconds
 _HTTP_TIMEOUT: int = 15
-
-# ---------------------------------------------------------------------------
-# Data models
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class ScoredArticle:
-    """A single article with relevance score from the Researcher.
-
-    Lightweight bullpen-specific model passed through the pipeline.
-    """
-
-    title: str
-    url: str
-    source: str
-    relevance_score: int  # 1-5
-    summary: str  # one-sentence summary
-
-
-@dataclass
-class ResearchBrief:
-    """Output of the Researcher Agent."""
-
-    articles: list[ScoredArticle]
-    sources_crawled: list[str]  # URLs attempted
-    sources_failed: list[str]  # URLs that failed after retries
-    run_timestamp: str  # ISO 8601
-
-    def to_dict(self) -> dict[str, Any]:
-        """Return a JSON-serialisable dict."""
-        return {
-            "articles": [asdict(a) for a in self.articles],
-            "sources_crawled": list(self.sources_crawled),
-            "sources_failed": list(self.sources_failed),
-            "run_timestamp": self.run_timestamp,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ResearchBrief":
-        """Reconstruct a ResearchBrief from a plain dict (round-trip)."""
-        return cls(
-            articles=[ScoredArticle(**a) for a in data["articles"]],
-            sources_crawled=list(data["sources_crawled"]),
-            sources_failed=list(data["sources_failed"]),
-            run_timestamp=data["run_timestamp"],
-        )
-
 
 # ---------------------------------------------------------------------------
 # Raw article (internal, pre-scoring)
@@ -321,6 +274,48 @@ def _crawl_github_issues(repo: str, token: str | None, source_name: str) -> list
     return articles
 
 
+def _crawl_aws_news(source_name: str) -> list[_RawArticle]:
+    """Fetch aws.amazon.com/new/ and parse individual announcement items.
+
+    The page lists individual announcements as <li> elements with a title
+    and link. We parse each item separately so the keyword filter can be
+    applied per-item rather than against the full page HTML (which would
+    always match since "bedrock" appears in navigation/footer).
+    """
+    import re as _re
+    resp = _http_get("https://aws.amazon.com/new/")
+    html = resp.text
+
+    articles: list[_RawArticle] = []
+
+    # aws.amazon.com/new/ renders announcement titles in <h3> or <a> tags
+    # within list items. We extract href + title pairs from anchor tags
+    # that look like announcement links (/about-aws/whats-new/...).
+    pattern = _re.compile(
+        r'<a[^>]+href="(/about-aws/whats-new/[^"]+)"[^>]*>\s*([^<]{10,200})\s*</a>',
+        _re.IGNORECASE,
+    )
+    seen: set[str] = set()
+    for match in pattern.finditer(html):
+        path, title = match.group(1), match.group(2).strip()
+        url = f"https://aws.amazon.com{path}"
+        if url in seen:
+            continue
+        seen.add(url)
+        # Use title as content for keyword filtering — avoids false positives
+        # from navigation/footer text that always contains niche keywords.
+        articles.append(
+            _RawArticle(title=title, url=url, source=source_name, content=title)
+        )
+
+    if not articles:
+        # Fallback: return the page as a single article if parsing found nothing
+        title = _extract_title_from_html(html) or source_name
+        articles = [_RawArticle(title=title, url="https://aws.amazon.com/new/", source=source_name, content=html)]
+
+    return articles
+
+
 def _crawl_rss_feed(url: str, source_name: str) -> list[_RawArticle]:
     """Fetch and parse an RSS feed, returning items as raw articles."""
     resp = _http_get(url)
@@ -515,17 +510,13 @@ def crawl_all_sources(
         )
     )
 
-    # --- Source 4: aws.amazon.com/new/ (keyword filter) ---
+    # --- Source 4: aws.amazon.com/new/ (keyword filter per item) ---
     def _fetch_aws_news() -> list[_RawArticle]:
-        articles = _crawl_http_page(
-            "https://aws.amazon.com/new/",
-            "aws.amazon.com/new/",
-        )
-        # Apply keyword filter: only keep if content matches niche keywords
+        articles = _crawl_aws_news("aws.amazon.com/new/")
+        # Apply keyword filter per item — each article's content is its title,
+        # so the filter is meaningful rather than always matching page-level HTML.
         filtered = [a for a in articles if matches_aws_news_keywords(a.content)]
-        before = len(articles)
-        after = len(filtered)
-        logger.info("AWS news keyword filter: %d -> %d articles", before, after)
+        logger.info("AWS news keyword filter: %d -> %d articles", len(articles), len(filtered))
         return filtered
 
     all_articles.extend(

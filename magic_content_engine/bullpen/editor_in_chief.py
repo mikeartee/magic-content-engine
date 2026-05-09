@@ -151,12 +151,14 @@ def _log(
     event_type: str,
     agent_type: str,
     details: dict[str, Any],
+    run_id: str = "",
 ) -> None:
     """Emit a structured AMILogEvent via *log_fn*."""
     event = AMILogEvent(
         event_type=event_type,
         timestamp=_now_iso(),
         agent_type=agent_type,
+        run_id=run_id,
         details=details,
     )
     log_fn(event)
@@ -252,7 +254,15 @@ def run_pipeline(
         Final pipeline result with status, published/escalated files, errors.
     """
     run_timestamp = _now_iso()
+    # Generate a unique run_id for this pipeline execution.
+    # Used for DynamoDB log keys, checkpoint records, and approval gate tokens.
+    run_id = f"{brief.run_date.isoformat() if hasattr(brief, 'run_date') else run_timestamp[:10]}-{brief.topic[:40].lower().replace(' ', '-')}"
     errors: list[dict[str, Any]] = []
+    sub_review: SubeditorReview | None = None  # initialise so approval gate guard is safe
+
+    # Bind run_id into a local log helper so every call includes it automatically.
+    def _log_run(event_type: str, agent_type: str, details: dict[str, Any]) -> None:
+        _log(log_fn, event_type, agent_type, details, run_id=run_id)
 
     # ------------------------------------------------------------------
     # 1. Validate BullpenBrief
@@ -260,7 +270,7 @@ def run_pipeline(
     try:
         validate_brief(brief)
     except BullpenBriefValidationError as exc:
-        _log(log_fn, "validation_error", "editor_in_chief", {"error": str(exc)})
+        _log_run("validation_error", "editor_in_chief", {"error": str(exc)})
         return PipelineResult(
             status="error",
             errors=[{"step": "validation", "error": str(exc)}],
@@ -281,14 +291,14 @@ def run_pipeline(
     # ------------------------------------------------------------------
     # 2. Researcher
     # ------------------------------------------------------------------
-    _log(log_fn, "agent_invoked", "researcher", {"topic": brief.topic})
+    _log_run("agent_invoked", "researcher", {"topic": brief.topic})
 
     try:
         research_brief: ResearchBrief = researcher_fn(brief)
     except Exception as exc:
         err = {"step": "researcher", "error": str(exc)}
         errors.append(err)
-        _log(log_fn, "agent_error", "researcher", err)
+        _log_run("agent_error", "researcher", err)
         _checkpoint(checkpoint_fn, "researcher", "", "failure")
         logger.error("Researcher failed — halting pipeline: %s", exc)
         return PipelineResult(
@@ -312,7 +322,7 @@ def run_pipeline(
     # ------------------------------------------------------------------
     # 3. Desk Editor
     # ------------------------------------------------------------------
-    _log(log_fn, "agent_invoked", "desk_editor", {"topic": brief.topic})
+    _log_run("agent_invoked", "desk_editor", {"topic": brief.topic})
 
     try:
         content_brief: ContentBrief = desk_editor_fn(
@@ -321,7 +331,7 @@ def run_pipeline(
     except Exception as exc:
         err = {"step": "desk_editor", "error": str(exc)}
         errors.append(err)
-        _log(log_fn, "agent_error", "desk_editor", err)
+        _log_run("agent_error", "desk_editor", err)
         _checkpoint(checkpoint_fn, "desk_editor", "", "failure")
         logger.error("Desk Editor failed — halting pipeline: %s", exc)
         return PipelineResult(
@@ -346,14 +356,14 @@ def run_pipeline(
     # ------------------------------------------------------------------
     # 4. Writer (initial pass)
     # ------------------------------------------------------------------
-    _log(log_fn, "agent_invoked", "writer", {"output_types": content_brief.output_types})
+    _log_run("agent_invoked", "writer", {"output_types": content_brief.output_types})
 
     try:
         writer_manifest: WriterManifest = writer_fn(content_brief, None)
     except Exception as exc:
         err = {"step": "writer", "error": str(exc)}
         errors.append(err)
-        _log(log_fn, "agent_error", "writer", err)
+        _log_run("agent_error", "writer", err)
         _checkpoint(checkpoint_fn, "writer", "", "failure")
         logger.error("Writer failed entirely — halting pipeline: %s", exc)
         return PipelineResult(
@@ -398,7 +408,7 @@ def run_pipeline(
         except Exception as exc:
             err = {"step": "subeditor", "error": str(exc)}
             errors.append(err)
-            _log(log_fn, "agent_error", "subeditor", err)
+            _log_run("agent_error", "subeditor", err)
             _checkpoint(checkpoint_fn, "subeditor", "", "failure")
             logger.error("Subeditor failed — escalating all pending files: %s", exc)
             # Mark all pending files for manual review
@@ -523,7 +533,7 @@ def run_pipeline(
         except Exception as exc:
             err = {"step": "writer_revision", "cycle": cycle + 1, "error": str(exc)}
             errors.append(err)
-            _log(log_fn, "agent_error", "writer", err)
+            _log_run("agent_error", "writer", err)
             _checkpoint(checkpoint_fn, "writer", "", "failure")
             logger.error("Writer revision cycle %d failed: %s", cycle + 1, exc)
             # Escalate all files that were still being revised
@@ -562,7 +572,7 @@ def run_pipeline(
             {"files_pending_approval": files_published},
         )
 
-        approved = approval_fn(sub_review if "sub_review" in dir() else None)
+        approved = approval_fn(sub_review)
 
         _log(
             log_fn,
@@ -587,7 +597,7 @@ def run_pipeline(
             except Exception as exc:
                 err = {"step": "publisher", "error": str(exc)}
                 errors.append(err)
-                _log(log_fn, "agent_error", "publisher", err)
+                _log_run("agent_error", "publisher", err)
                 _checkpoint(checkpoint_fn, "publisher", "", "failure")
                 logger.error("Publisher failed: %s", exc)
                 return PipelineResult(

@@ -2,14 +2,6 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "S3ReadOutput",
-      "Effect": "Allow",
-      "Action": [
-        "s3:GetObject"
-      ],
-      "Resource": "arn:aws:s3:::mce-second-brain/output/*"
-    },
-    {
       "Sid": "S3WriteOutput",
       "Effect": "Allow",
       "Action": [
@@ -24,7 +16,12 @@
         "ses:SendEmail",
         "ses:SendRawEmail"
       ],
-      "Resource": "*"
+      "Resource": "arn:aws:ses:ap-southeast-2:*:identity/*",
+      "Condition": {
+        "StringLike": {
+          "ses:FromAddress": "${SES_SENDER_EMAIL}"
+        }
+      }
     },
     {
       "Sid": "CloudWatchLogs",

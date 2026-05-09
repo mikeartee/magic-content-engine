@@ -24,10 +24,17 @@ import json
 import logging
 import pathlib
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Protocol
 
+from magic_content_engine.bullpen.models import (
+    ContentBrief,
+    FileEntry,
+    ScoredArticle,
+    WriterInput,
+    WriterManifest,
+)
 from magic_content_engine.config import HAIKU_MODEL_ID, SONNET_MODEL_ID
 from magic_content_engine.steering import load_steering
 from magic_content_engine.writing_agent import (
@@ -48,77 +55,6 @@ from magic_content_engine.writing_agent import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Data models
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class ScoredArticle:
-    """Lightweight article representation from the Researcher/Desk Editor."""
-
-    title: str
-    url: str
-    source: str
-    relevance_score: int  # 1-5
-    summary: str = ""
-
-
-@dataclass
-class ContentBrief:
-    """Output of the Desk Editor Agent — input to the Writer Agent."""
-
-    selected_articles: list[ScoredArticle]
-    editorial_angle: str
-    tone_guidance: str
-    output_types: list[str]  # subset of: blog, youtube, cfp, usergroup, digest
-    run_timestamp: str  # ISO 8601
-    slug: str = ""
-    run_date: str = ""  # YYYY-MM-DD; defaults to today if empty
-
-
-@dataclass
-class FileEntry:
-    """A single file written by the Writer Agent."""
-
-    path: str  # relative to output_dir
-    output_type: str  # blog | youtube | cfp | usergroup | digest
-    word_count: int
-
-
-@dataclass
-class WriterManifest:
-    """Output of the Writer Agent."""
-
-    files_written: list[FileEntry]
-    voice_rules_applied: bool = True  # always True
-    run_timestamp: str = ""  # ISO 8601
-
-    def to_dict(self) -> dict:
-        """Serialise to a plain dict (JSON-round-trip safe)."""
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "WriterManifest":
-        """Deserialise from a plain dict."""
-        files = [FileEntry(**f) for f in data.get("files_written", [])]
-        return cls(
-            files_written=files,
-            voice_rules_applied=data.get("voice_rules_applied", True),
-            run_timestamp=data.get("run_timestamp", ""),
-        )
-
-
-@dataclass
-class WriterInput:
-    """Input to the Writer Agent, including optional revision feedback."""
-
-    content_brief: ContentBrief
-    steering_base_path: str
-    output_dir: str
-    revision_feedback: str | None = None  # present only during revision re-spawns
 
 
 # ---------------------------------------------------------------------------

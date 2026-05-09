@@ -58,6 +58,25 @@ class ResearchBrief:
     sources_failed: list[str]
     run_timestamp: str  # ISO 8601
 
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serialisable dict."""
+        return {
+            "articles": [asdict(a) for a in self.articles],
+            "sources_crawled": list(self.sources_crawled),
+            "sources_failed": list(self.sources_failed),
+            "run_timestamp": self.run_timestamp,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ResearchBrief":
+        """Reconstruct a ResearchBrief from a plain dict (round-trip)."""
+        return cls(
+            articles=[ScoredArticle(**a) for a in data["articles"]],
+            sources_crawled=list(data["sources_crawled"]),
+            sources_failed=list(data["sources_failed"]),
+            run_timestamp=data["run_timestamp"],
+        )
+
 
 # ---------------------------------------------------------------------------
 # Desk Editor output
@@ -73,6 +92,8 @@ class ContentBrief:
     tone_guidance: str
     output_types: list[str]
     run_timestamp: str  # ISO 8601
+    slug: str = ""       # kebab-case topic slug; populated by Desk Editor
+    run_date: str = ""   # YYYY-MM-DD; defaults to today in Writer if empty
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +117,20 @@ class WriterManifest:
     files_written: list[FileEntry]
     voice_rules_applied: bool = True
     run_timestamp: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialise to a plain dict (JSON-round-trip safe)."""
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "WriterManifest":
+        """Deserialise from a plain dict."""
+        files = [FileEntry(**f) for f in data.get("files_written", [])]
+        return cls(
+            files_written=files,
+            voice_rules_applied=data.get("voice_rules_applied", True),
+            run_timestamp=data.get("run_timestamp", ""),
+        )
 
 
 @dataclass
@@ -225,6 +260,7 @@ class AMILogEvent:
     event_type: str
     timestamp: str  # ISO 8601
     agent_type: str
+    run_id: str = ""  # pipeline run identifier; set by Editor-in-Chief
     details: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:

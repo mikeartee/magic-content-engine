@@ -34,7 +34,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _DEFAULT_SECRET_ENV_VAR = "APPROVAL_TOKEN_SECRET"
-_DEFAULT_SECRET_FALLBACK = "dev-secret-change-in-production"
 _DEFAULT_BASE_URL = os.getenv("APPROVAL_BASE_URL", "https://api.example.com/approval")
 
 _DECISION_APPROVE = "approve"
@@ -93,8 +92,19 @@ class SESClientProtocol(Protocol):
 
 
 def _get_secret() -> str:
-    """Return the HMAC secret from the environment, with a dev fallback."""
-    return os.getenv(_DEFAULT_SECRET_ENV_VAR, _DEFAULT_SECRET_FALLBACK)
+    """Return the HMAC secret from the environment.
+
+    Raises ``ValueError`` if ``APPROVAL_TOKEN_SECRET`` is not set, rather than
+    silently falling back to a hardcoded string that could be forged by anyone
+    who reads the source code.
+    """
+    secret = os.getenv(_DEFAULT_SECRET_ENV_VAR)
+    if not secret:
+        raise ValueError(
+            f"Environment variable {_DEFAULT_SECRET_ENV_VAR!r} is not set. "
+            "Set it to a strong random secret before running the pipeline."
+        )
+    return secret
 
 
 def generate_approval_token(run_id: str, secret: str | None = None) -> str:
@@ -114,7 +124,7 @@ def generate_approval_token(run_id: str, secret: str | None = None) -> str:
     """
     if secret is None:
         secret = _get_secret()
-    return hmac.new(
+    return hmac.HMAC(
         secret.encode("utf-8"),
         run_id.encode("utf-8"),
         hashlib.sha256,

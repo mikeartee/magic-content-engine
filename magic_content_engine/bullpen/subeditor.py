@@ -290,7 +290,7 @@ def review(
     verdicts: list[Verdict] = []
 
     for entry in manifest.files_written:
-        filename = pathlib.Path(entry.path).name
+        filename = entry.path  # preserve full relative path for EIC path resolution
         file_path = output_path / entry.path
 
         # --- Read content file ---

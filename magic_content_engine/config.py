@@ -21,6 +21,7 @@ MCE_S3_ARCHIVE_PREFIX: str = os.getenv("MCE_S3_ARCHIVE_PREFIX", "archive/")
 
 # DynamoDB tables (all use on-demand billing / PAY_PER_REQUEST)
 MCE_CHECKPOINTS_TABLE: str = os.getenv("MCE_CHECKPOINTS_TABLE", "mce-checkpoints")
+MCE_RUN_HISTORY_TABLE: str = os.getenv("MCE_RUN_HISTORY_TABLE", "mce-run-history")
 MCE_TOPIC_COVERAGE_TABLE: str = os.getenv("MCE_TOPIC_COVERAGE_TABLE", "mce-topic-coverage")
 MCE_DEDUPLICATION_TABLE: str = os.getenv("MCE_DEDUPLICATION_TABLE", "mce-deduplication")
 MCE_HELD_ITEMS_TABLE: str = os.getenv("MCE_HELD_ITEMS_TABLE", "mce-held-items")

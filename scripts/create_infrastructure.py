@@ -46,6 +46,9 @@ S3_KEY_PREFIXES = {
 # mce-checkpoints: pipeline checkpoint/resume per run
 CHECKPOINTS_TABLE = "mce-checkpoints"
 
+# mce-run-history: AMI_Log — append-only structured decision log (partition: run_id, sort: timestamp)
+RUN_HISTORY_TABLE = "mce-run-history"
+
 # mce-topic-coverage: tracks which topics have been covered
 TOPIC_COVERAGE_TABLE = "mce-topic-coverage"
 
@@ -272,10 +275,10 @@ def create_deduplication_table(client: "boto3.client") -> None:
 
 
 def create_held_items_table(client: "boto3.client") -> None:
-    """mce-held-items ΓÇö content held for manual review.
+    """mce-held-items — content held for manual review.
 
-    Partition key : filename (S)  ΓÇö the content filename
-    Sort key      : run_date (S)  ΓÇö ISO 8601 date of the pipeline run
+    Partition key : filename (S)  — the content filename
+    Sort key      : run_date (S)  — ISO 8601 date of the pipeline run
     """
     _create_table(
         client=client,
@@ -289,6 +292,31 @@ def create_held_items_table(client: "boto3.client") -> None:
             {"AttributeName": "run_date", "KeyType": "RANGE"},
         ],
         step_label="5/9",
+    )
+
+
+def create_run_history_table(client: "boto3.client") -> None:
+    """mce-run-history — AMI_Log append-only structured decision log.
+
+    Every agent invocation, completion, verdict, and approval decision is
+    written here by the Editor-in-Chief's log_fn. The table is append-only
+    by convention — items are never deleted or updated.
+
+    Partition key : run_id    (S) — unique pipeline run identifier
+    Sort key      : timestamp (S) — ISO 8601 timestamp of the event
+    """
+    _create_table(
+        client=client,
+        table_name=RUN_HISTORY_TABLE,
+        attribute_definitions=[
+            {"AttributeName": "run_id", "AttributeType": "S"},
+            {"AttributeName": "timestamp", "AttributeType": "S"},
+        ],
+        key_schema=[
+            {"AttributeName": "run_id", "KeyType": "HASH"},
+            {"AttributeName": "timestamp", "KeyType": "RANGE"},
+        ],
+        step_label="6/9",
     )
 
 
@@ -636,6 +664,7 @@ def main() -> None:
 
     for fn in (
         create_checkpoints_table,
+        create_run_history_table,
         create_topic_coverage_table,
         create_deduplication_table,
         create_held_items_table,
