@@ -120,10 +120,15 @@ def invoke_content_run_handler(params: dict[str, Any]) -> dict[str, Any]:
         date.fromisoformat(run_date_str) if run_date_str else date.today()
     )
 
-    # In production, dependencies are constructed from AgentCore services.
-    # This handler is the integration point; callers must supply deps
-    # or a factory must be configured. For now, raise if not wired.
-    raise NotImplementedError(
-        "Production dependency construction not yet wired. "
-        "Use run_workflow() directly with explicit WorkflowDependencies."
-    )
+    from magic_content_engine.dependencies import build_dependencies
+    deps = build_dependencies()
+    agent_log = run_workflow(deps, source=source, run_date=run_date_val)
+    return {
+        "status": "ok",
+        "run_date": run_date_val.isoformat(),
+        "source": source,
+        "articles_found": agent_log.articles_found,
+        "articles_kept": agent_log.articles_kept,
+        "selected_outputs": agent_log.selected_outputs,
+        "errors": len(agent_log.errors),
+    }

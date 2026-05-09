@@ -47,3 +47,6 @@ REVIEW_OUTPUT_PATH: str = os.getenv("REVIEW_OUTPUT_PATH", "./output/review/")
 # --- dev.to ---
 DEVTO_API_KEY: str = os.getenv("DEVTO_API_KEY", "")
 DEVTO_USERNAME: str = os.getenv("DEVTO_USERNAME", "")
+
+# --- Vault ---
+VAULT_PATH: str = os.getenv("VAULT_PATH", "")

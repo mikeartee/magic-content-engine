@@ -80,6 +80,17 @@ def _fake_llm(*, model_id: str, prompt: str) -> str:
     return "This is generated content about AWS services.\n\nThe results look good."
 
 
+# ---------------------------------------------------------------------------
+# WritingContext
+# ---------------------------------------------------------------------------
+
+
+class TestWritingContext:
+    def test_writing_context_vault_context_default(self):
+        context = _make_context()
+        assert context.vault_context is None
+
+
 def _failing_llm(*, model_id: str, prompt: str) -> str:
     raise RuntimeError("LLM service unavailable")
 

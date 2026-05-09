@@ -18,9 +18,10 @@ import logging
 import sys
 from dataclasses import dataclass, field
 from datetime import date
+from pathlib import Path
 from typing import Optional, Protocol, runtime_checkable
 
-from magic_content_engine.config import LOG_LEVEL, S3_BUCKET, S3_KEY_PREFIX, STEERING_BASE_PATH
+from magic_content_engine.config import LOG_LEVEL, S3_BUCKET, S3_KEY_PREFIX, STEERING_BASE_PATH, VAULT_PATH
 from magic_content_engine.errors import ErrorCollector, StepError
 from magic_content_engine.models import (
     AgentLog,
@@ -117,8 +118,25 @@ class WorkflowDependencies:
     # Unattended mode
     unattended: bool = False
 
+    # Vault path
+    vault_path: str = field(default_factory=lambda: VAULT_PATH)
+
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Vault context helper
+# ---------------------------------------------------------------------------
+
+
+def _format_vault_context(vc: "vault.VaultContext") -> str:
+    parts = []
+    if vc.permanent_notes:
+        parts.append("### Permanent notes\n\n" + vc.permanent_notes)
+    if vc.project_note:
+        parts.append("### Content backlog\n\n" + vc.project_note)
+    return "\n\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -190,6 +208,24 @@ def run_workflow(
         collector.add(StepError(step="load_memory", target="memory", error_message=str(exc)))
         voice_profile = ""
         covered_urls = set()
+
+    # ------------------------------------------------------------------
+    # Step 1.5: Read vault context
+    # ------------------------------------------------------------------
+    _log_step("vault_read")
+    vault_context_str: str | None = None
+    if deps.vault_path and Path(deps.vault_path).is_dir():
+        try:
+            from magic_content_engine.vault import VaultReader
+            vc = VaultReader(deps.vault_path).load()
+            vault_context_str = _format_vault_context(vc)
+        except Exception as exc:
+            collector.add(StepError(step="vault_read", target=deps.vault_path, error_message=str(exc)))
+    else:
+        if deps.vault_path:
+            logger.warning("VAULT_PATH '%s' does not exist — skipping vault integration", deps.vault_path)
+        else:
+            logger.warning("VAULT_PATH not set — skipping vault integration")
 
     # ------------------------------------------------------------------
     # Step 3: Fetch engagement metrics (REQ-034)
@@ -288,6 +324,19 @@ def run_workflow(
         scored = []
 
     # ------------------------------------------------------------------
+    # Step 9.5: Fetch article body text for each scored article
+    # ------------------------------------------------------------------
+    _log_step("fetch_bodies")
+    for article in scored:
+        try:
+            body = deps.browser.fetch_article_body(article.url)  # type: ignore[attr-defined]
+            if body:
+                article.body = body
+                logger.info("Fetched body (%d chars): %s", len(body), article.url)
+        except Exception as exc:
+            collector.add(StepError(step="fetch_body", target=article.url, error_message=str(exc)))
+
+    # ------------------------------------------------------------------
     # Step 10: Extract metadata and build APA citations
     # ------------------------------------------------------------------
     _log_step("extract_metadata")
@@ -355,6 +404,7 @@ def run_workflow(
             screenshots_path=screenshots_path,
             run_date=run_date,
             slug=slug,
+            vault_context=vault_context_str,
         )
         try:
             content = generate_content(ctx, deps.llm_writer, collector)
@@ -434,6 +484,7 @@ def run_workflow(
     # ------------------------------------------------------------------
     _log_step("publish_gate")
     approved_files: list[str] = []
+    gate_results = []
     try:
         gate_results = run_publish_gate(
             outputs=generated_files,
@@ -491,6 +542,28 @@ def run_workflow(
         collector=collector,
         uploaded_keys=uploaded_keys,
     )
+
+    # ------------------------------------------------------------------
+    # Step 21: Write vault run summary
+    # ------------------------------------------------------------------
+    _log_step("vault_write")
+    if deps.vault_path and Path(deps.vault_path).is_dir():
+        try:
+            from magic_content_engine.vault import VaultWriter
+            VaultWriter(deps.vault_path).write_summary(
+                run_date=run_date,
+                articles_found=len(all_articles),
+                articles_kept=len(confirmed_articles),
+                confirmed_titles=[a.title for a in confirmed_articles if a.title],
+                selected_outputs=selected_outputs,
+                gate_decisions=[
+                    {"filename": r.filename, "decision": r.decision.value}
+                    for r in gate_results
+                ] if gate_results else [],
+                errors=collector.to_list(),
+            )
+        except Exception as exc:
+            collector.add(StepError(step="vault_write", target=deps.vault_path, error_message=str(exc)))
 
     # Update agent_log errors with final state
     agent_log.errors = collector.to_list()
@@ -584,12 +657,10 @@ def main(argv: list[str] | None = None) -> None:
 
     logger.info("Magic Content Engine started (source=%s, date=%s)", args.source, run_date_val)
 
-    # In production, real dependencies would be constructed here.
-    # For now, log that workflow requires dependency injection.
-    logger.info(
-        "To run the full workflow, construct WorkflowDependencies and call run_workflow(). "
-        "CLI stub exiting."
-    )
+    from magic_content_engine.dependencies import build_dependencies
+    deps = build_dependencies()
+    agent_log = run_workflow(deps, source=args.source, run_date=run_date_val)
+    logger.info("Run complete — %d errors", len(agent_log.errors))
 
 
 if __name__ == "__main__":

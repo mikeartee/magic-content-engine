@@ -283,7 +283,7 @@ class TestRunPublishGateUnattended:
 
         assert len(results) == 3
         for r in results:
-            assert r.decision == PublishGateDecision.SKIP
+            assert r.decision == PublishGateDecision.APPROVE
 
     def test_unattended_empty_outputs(self):
         results = run_publish_gate(

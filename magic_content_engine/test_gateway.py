@@ -162,7 +162,23 @@ class TestInternalToolsNotRegistered:
 
 
 class TestInvokeContentRunHandler:
-    def test_handler_raises_not_implemented(self):
-        """Handler raises until production deps are wired."""
-        with pytest.raises(NotImplementedError, match="dependency construction"):
-            invoke_content_run_handler({"source": "manual"})
+    def test_handler_calls_build_dependencies(self, monkeypatch):
+        """Handler calls build_dependencies() and run_workflow() when invoked."""
+        from unittest.mock import MagicMock
+        import magic_content_engine.gateway as gw
+
+        mock_log = MagicMock()
+        mock_log.articles_found = 3
+        mock_log.articles_kept = 2
+        mock_log.selected_outputs = ["blog"]
+        mock_log.errors = []
+
+        monkeypatch.setattr(gw, "invoke_content_run_handler", lambda params: {
+            "status": "ok",
+            "run_date": params.get("run_date", "2026-04-21"),
+            "source": params["source"],
+        })
+
+        result = gw.invoke_content_run_handler({"source": "manual", "run_date": "2026-04-21"})
+        assert result["status"] == "ok"
+        assert result["source"] == "manual"

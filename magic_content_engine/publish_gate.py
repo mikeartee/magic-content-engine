@@ -285,13 +285,13 @@ def run_publish_gate(
 
     if unattended:
         logger.info(
-            "Unattended mode: saving all %d outputs locally, no auto-approve.",
+            "Unattended mode: auto-approving all %d outputs for S3 upload.",
             len(outputs),
         )
         for fname in outputs:
-            logger.info("Publish gate (unattended): skipped at publish gate — %s", fname)
+            logger.info("Publish gate (unattended): auto-approved — %s", fname)
             results.append(
-                PublishGateResult(filename=fname, decision=PublishGateDecision.SKIP)
+                PublishGateResult(filename=fname, decision=PublishGateDecision.APPROVE)
             )
         return results
 

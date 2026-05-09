@@ -141,6 +141,9 @@ class StubBrowser:
         from magic_content_engine.crawler import CrawlResult
         return CrawlResult(url=url, content="test content", title="Test Article")
 
+    def fetch_article_body(self, url: str) -> str:
+        return f"Article body content for {url}"
+
 
 class StubScreenshotBrowser:
     """Stub for screenshots.BrowserProtocol."""
@@ -228,7 +231,7 @@ class CallTracker:
 # ---------------------------------------------------------------------------
 
 
-def _make_deps(**overrides) -> WorkflowDependencies:
+def _make_deps(vault_path: str = "", **overrides) -> WorkflowDependencies:
     """Build a WorkflowDependencies with all stubs, applying overrides."""
     defaults = dict(
         memory=StubMemory(),
@@ -249,6 +252,7 @@ def _make_deps(**overrides) -> WorkflowDependencies:
         gate_file_ops=StubGateFileOps(),
         input_fn=CallTracker(["", "1,2"]),  # confirm articles, select blog+youtube
         unattended=True,  # skip interactive prompts
+        vault_path=vault_path,
     )
     defaults.update(overrides)
     return WorkflowDependencies(**defaults)
@@ -288,13 +292,14 @@ class TestParseArgs:
 
 class TestRunWorkflow:
     def test_executes_all_steps_in_order(self):
-        """Verify all 20 workflow steps execute in the correct order."""
+        """Verify all 23 workflow steps execute in the correct order."""
         deps = _make_deps()
         log = run_workflow(deps, source="manual", run_date=date(2025, 7, 14))
 
         expected_steps = [
             "accept_trigger",
             "load_memory",
+            "vault_read",
             "fetch_engagement",
             "load_topic_coverage",
             "weekly_brief",
@@ -302,6 +307,7 @@ class TestRunWorkflow:
             "crawl_sources",
             "deduplicate",
             "score_articles",
+            "fetch_bodies",
             "extract_metadata",
             "build_citations",
             "present_articles",
@@ -314,6 +320,7 @@ class TestRunWorkflow:
             "s3_upload",
             "store_urls",
             "terminal_summary",
+            "vault_write",
         ]
         actual_steps = log.run_metadata.get("steps", [])
         assert actual_steps == expected_steps
@@ -362,6 +369,9 @@ class TestRunWorkflow:
             def fetch_page(self, url: str):
                 raise ConnectionError("Network down")
 
+            def fetch_article_body(self, url: str) -> str:
+                return ""
+
         deps = _make_deps(browser=FailingBrowser())
         log = run_workflow(deps, source="manual", run_date=date(2025, 7, 14))
 
@@ -374,6 +384,55 @@ class TestRunWorkflow:
         # Unattended defaults to blog + youtube
         assert "blog" in log.selected_outputs
         assert "youtube" in log.selected_outputs
+
+    def test_orchestrator_step_order(self, tmp_path):
+        """vault_read appears after load_memory; vault_write appears after terminal_summary.
+
+        Requirements: 6.1, 6.3
+        """
+        # Create minimal vault structure so vault_read actually runs
+        (tmp_path / "06-permanent").mkdir()
+        (tmp_path / "01-projects").mkdir()
+        (tmp_path / "01-projects" / "magic-content-engine.md").write_text(
+            "# MCE project note", encoding="utf-8"
+        )
+
+        deps = _make_deps(vault_path=str(tmp_path))
+        log = run_workflow(deps, source="manual", run_date=date(2025, 7, 14))
+
+        steps = log.run_metadata["steps"]
+
+        assert "vault_read" in steps
+        assert "vault_write" in steps
+        assert steps.index("vault_read") > steps.index("load_memory")
+        assert steps.index("vault_write") > steps.index("terminal_summary")
+
+    def test_orchestrator_skips_vault_when_path_empty(self):
+        """vault_path="" means vault_context_str stays None, so all WritingContext
+        instances are constructed with vault_context=None.
+
+        Requirements: 6.4, 8.1
+        """
+        from unittest.mock import patch
+
+        captured_contexts: list = []
+
+        def _capturing_generate_content(ctx, llm_writer, collector):
+            captured_contexts.append(ctx)
+            return "Generated content for testing."
+
+        deps = _make_deps(vault_path="")
+        with patch(
+            "magic_content_engine.writing_agent.generate_content",
+            side_effect=_capturing_generate_content,
+        ):
+            run_workflow(deps, source="manual", run_date=date(2025, 7, 14))
+
+        assert len(captured_contexts) > 0, "generate_content was never called"
+        for ctx in captured_contexts:
+            assert ctx.vault_context is None, (
+                f"Expected vault_context=None but got {ctx.vault_context!r}"
+            )
 
 
 # ---------------------------------------------------------------------------

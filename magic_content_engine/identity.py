@@ -65,6 +65,37 @@ class AgentCoreIdentityProvider:
         )
 
 
+class SecretsManagerIdentityProvider:
+    """Production provider that retrieves credentials from AWS Secrets Manager.
+
+    Loads a single JSON secret containing all credentials and returns
+    individual values by name. The secret should contain:
+      {
+        "github_token":      "...",
+        "devto_api_key":     "...",
+        "devto_username":    "..."
+      }
+    """
+
+    def __init__(
+        self,
+        secret_name: str = "magic-content-engine/credentials",
+        region: str = "ap-southeast-2",
+    ) -> None:
+        import boto3, json as _json
+        client = boto3.client("secretsmanager", region_name=region)
+        resp = client.get_secret_value(SecretId=secret_name)
+        self._secrets: dict[str, str] = _json.loads(resp["SecretString"])
+
+    def get_credential(self, name: str) -> str:
+        if name not in SUPPORTED_CREDENTIALS:
+            raise ValueError(f"Unknown credential: {name!r}")
+        value = self._secrets.get(_CREDENTIAL_ENV_MAP.get(name, name), "")
+        if not value:
+            raise ValueError(f"Credential {name!r} not found in Secrets Manager secret")
+        return value
+
+
 def get_identity_provider(
     use_agentcore: bool = False,
 ) -> IdentityProviderProtocol:
