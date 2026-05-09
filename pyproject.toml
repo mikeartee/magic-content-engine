@@ -1,23 +1,25 @@
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "magic-content-engine"
 version = "0.1.0"
 description = "Automated weekly content research and generation engine"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
     "strands-agents",
     "boto3",
     "python-dotenv",
     "requests",
+    "aws-durable-execution-sdk-python==1.4.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "hypothesis",
     "pytest",
+    "aws-durable-execution-sdk-python-testing==1.1.2",
 ]
 
 [tool.setuptools.packages.find]
