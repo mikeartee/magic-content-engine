@@ -110,7 +110,7 @@ def print_lambda_instructions() -> None:
   # Create the Lambda function (first time)
   aws lambda create-function \\
     --function-name {LAMBDA_FUNCTION} \\
-    --runtime python3.12 \\
+    --runtime python3.13 \\
     --handler lambda_handler.handler \\
     --timeout 900 \\
     --memory-size 1024 \\
