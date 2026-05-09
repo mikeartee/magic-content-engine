@@ -436,7 +436,7 @@ def assemble_youtube_script(context: WritingContext, generated_body: str) -> str
     parts: list[str] = []
 
     # --- Title ---
-    parts.append(f"# {context.slug.replace('-', ' ').title()} — YouTube Script\n")
+    parts.append(f"# {context.slug.replace('-', ' ').title()} - YouTube Script\n")
 
     # --- Thumbnail concept ---
     top_title = context.articles[0].article.title if context.articles else "AWS Update"
@@ -769,7 +769,7 @@ def assemble_usergroup_session(context: WritingContext, generated_body: str) -> 
     # --- Slide outline (max 12 slides for 30min) ---
     parts.append("## Slide Outline\n")
     slides: list[tuple[str, str]] = [
-        ("Title Slide", f"{context.slug.replace('-', ' ').title()} — User Group Session"),
+        ("Title Slide", f"{context.slug.replace('-', ' ').title()} - User Group Session"),
         ("Agenda", "What we will cover today and key takeaways"),
     ]
 
@@ -787,7 +787,7 @@ def assemble_usergroup_session(context: WritingContext, generated_body: str) -> 
     slides = slides[:12]
 
     for i, (title, description) in enumerate(slides, 1):
-        parts.append(f"{i}. **{title}** — {description}")
+        parts.append(f"{i}. **{title}** - {description}")
     parts.append("")
 
     return "\n".join(parts)
