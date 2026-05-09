@@ -10,9 +10,10 @@ What this script does:
   3. Creates DynamoDB table mce-topic-coverage (topic)
   4. Creates DynamoDB table mce-deduplication (article_url)
   5. Creates DynamoDB table mce-held-items (filename + run_date)
-  6. Prints Secrets Manager instructions
-  7. Prints Lambda deployment instructions
-  8. Prints EventBridge Scheduler instructions
+  6. Creates IAM execution roles for each Lambda (least-privilege per agent)
+  7. Prints Secrets Manager instructions
+  8. Prints Lambda deployment instructions
+  9. Prints EventBridge Scheduler instructions
 
 All DynamoDB tables use on-demand billing (PAY_PER_REQUEST).
 
@@ -23,6 +24,7 @@ Prerequisites:
 from __future__ import annotations
 
 import json
+import os
 import sys
 
 import boto3
@@ -57,6 +59,51 @@ HELD_ITEMS_TABLE = "mce-held-items"
 LEGACY_TABLE = "magic-content-engine"
 SECRET_NAME = "magic-content-engine/credentials"
 LAMBDA_FUNCTION = "magic-content-engine"
+
+# --- IAM roles (per-agent, least-privilege) ---
+# Policy documents live in docs/iam-policies/ relative to the repo root.
+IAM_ROLES: dict[str, dict] = {
+    "mce-researcher-role": {
+        "description": "Researcher Lambda — read-only S3 ami-context, Bedrock Haiku, CloudWatch Logs",
+        "policy_file": "researcher-policy.json",
+    },
+    "mce-desk-editor-role": {
+        "description": "Desk Editor Lambda — Bedrock Sonnet only, CloudWatch Logs",
+        "policy_file": "desk-editor-policy.json",
+    },
+    "mce-writer-role": {
+        "description": "Writer Lambda — S3 PutObject output/* only, Bedrock Sonnet+Haiku, CloudWatch Logs",
+        "policy_file": "writer-policy.json",
+    },
+    "mce-subeditor-role": {
+        "description": "Subeditor Lambda — S3 GetObject output/* only, Bedrock Sonnet, CloudWatch Logs",
+        "policy_file": "subeditor-policy.json",
+    },
+    "mce-publisher-role": {
+        "description": "Publisher Lambda — S3 GetObject+PutObject output/*, SES SendEmail, CloudWatch Logs",
+        "policy_file": "publisher-policy.json",
+    },
+    "mce-archivist-role": {
+        "description": "Archivist Lambda — S3 GetObject ami-context/*, S3 PutObject archive/*, CloudWatch Logs",
+        "policy_file": "archivist-policy.json",
+    },
+    "mce-editor-in-chief-role": {
+        "description": "Editor-in-Chief Lambda — Lambda InvokeFunction mce-*, DynamoDB checkpoints+run-history, SES, CloudWatch Logs",
+        "policy_file": "editor-in-chief-policy.json",
+    },
+}
+
+# Trust policy allowing Lambda to assume these roles
+_LAMBDA_TRUST_POLICY = json.dumps({
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {"Service": "lambda.amazonaws.com"},
+            "Action": "sts:AssumeRole",
+        }
+    ],
+})
 
 
 # ---------------------------------------------------------------------------
@@ -167,7 +214,7 @@ def create_checkpoints_table(client: "boto3.client") -> None:
             {"AttributeName": "run_id", "KeyType": "HASH"},
             {"AttributeName": "agent_type", "KeyType": "RANGE"},
         ],
-        step_label="2/6",
+        step_label="2/9",
     )
 
 
@@ -185,7 +232,7 @@ def create_topic_coverage_table(client: "boto3.client") -> None:
         key_schema=[
             {"AttributeName": "topic", "KeyType": "HASH"},
         ],
-        step_label="3/6",
+        step_label="3/9",
     )
 
 
@@ -203,7 +250,7 @@ def create_deduplication_table(client: "boto3.client") -> None:
         key_schema=[
             {"AttributeName": "article_url", "KeyType": "HASH"},
         ],
-        step_label="4/6",
+        step_label="4/9",
     )
 
 
@@ -224,8 +271,100 @@ def create_held_items_table(client: "boto3.client") -> None:
             {"AttributeName": "filename", "KeyType": "HASH"},
             {"AttributeName": "run_date", "KeyType": "RANGE"},
         ],
-        step_label="5/6",
+        step_label="5/9",
     )
+
+
+# ---------------------------------------------------------------------------
+# IAM execution roles (per-agent, least-privilege)
+# ---------------------------------------------------------------------------
+
+def create_iam_roles(policy_dir: str | None = None) -> list[str]:
+    """Create per-agent IAM execution roles and attach inline policies.
+
+    Each Lambda agent gets a dedicated role with only the permissions it needs.
+    Roles are idempotent — re-running skips roles that already exist.
+
+    Args:
+        policy_dir: Path to the directory containing policy JSON files.
+                    Defaults to ``docs/iam-policies/`` relative to the repo root
+                    (i.e. the directory two levels above this script).
+
+    Returns:
+        List of error messages encountered (empty on full success).
+    """
+    if policy_dir is None:
+        # scripts/ → repo root → docs/iam-policies/
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        policy_dir = os.path.join(repo_root, "docs", "iam-policies")
+
+    print(f"\n[6/9] Creating IAM execution roles (least-privilege per Lambda)")
+    print(f"  Policy directory: {policy_dir}")
+
+    iam = boto3.client("iam", region_name=REGION)
+    errors: list[str] = []
+
+    for role_name, role_cfg in IAM_ROLES.items():
+        policy_path = os.path.join(policy_dir, role_cfg["policy_file"])
+
+        # Load policy document
+        try:
+            with open(policy_path, encoding="utf-8") as fh:
+                policy_document = fh.read()
+            # Validate it parses as JSON
+            json.loads(policy_document)
+        except FileNotFoundError:
+            msg = f"  ✗ Policy file not found: {policy_path}"
+            print(msg, file=sys.stderr)
+            errors.append(msg)
+            continue
+        except json.JSONDecodeError as exc:
+            msg = f"  ✗ Invalid JSON in {policy_path}: {exc}"
+            print(msg, file=sys.stderr)
+            errors.append(msg)
+            continue
+
+        # Create role (or confirm it exists)
+        try:
+            iam.create_role(
+                RoleName=role_name,
+                AssumeRolePolicyDocument=_LAMBDA_TRUST_POLICY,
+                Description=role_cfg["description"],
+                Tags=[
+                    {"Key": "Project", "Value": "magic-content-engine"},
+                    {"Key": "ManagedBy", "Value": "create_infrastructure.py"},
+                ],
+            )
+            print(f"  ✓ Role created: {role_name}")
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "EntityAlreadyExists":
+                print(f"  ✓ Role already exists — skipping creation: {role_name}")
+            else:
+                msg = f"  ✗ Failed to create role {role_name}: {e}"
+                print(msg, file=sys.stderr)
+                errors.append(msg)
+                continue
+
+        # Attach (or update) the inline policy
+        inline_policy_name = f"{role_name}-policy"
+        try:
+            iam.put_role_policy(
+                RoleName=role_name,
+                PolicyName=inline_policy_name,
+                PolicyDocument=policy_document,
+            )
+            print(f"    ✓ Inline policy attached: {inline_policy_name}")
+        except ClientError as e:
+            msg = f"  ✗ Failed to attach policy to {role_name}: {e}"
+            print(msg, file=sys.stderr)
+            errors.append(msg)
+
+    if not errors:
+        print(f"\n  All {len(IAM_ROLES)} IAM roles created/verified.")
+    else:
+        print(f"\n  Completed with {len(errors)} IAM error(s). See above for details.")
+
+    return errors
 
 
 # ---------------------------------------------------------------------------
@@ -233,7 +372,7 @@ def create_held_items_table(client: "boto3.client") -> None:
 # ---------------------------------------------------------------------------
 
 def print_secret_instructions() -> None:
-    print(f"\n[6/6] Create Secrets Manager secret (do this manually in the console or CLI)")
+    print(f"\n[7/9] Create Secrets Manager secret (do this manually in the console or CLI)")
     secret_value = {
         "github_token": "ghp_YOUR_GITHUB_TOKEN_HERE",
         "devto_api_key": "YOUR_DEVTO_API_KEY_HERE",
@@ -401,6 +540,10 @@ def main() -> None:
             msg = f"  ✗ {fn.__name__} failed: {exc}"
             print(msg, file=sys.stderr)
             errors.append(msg)
+
+    # IAM roles
+    iam_errors = create_iam_roles()
+    errors.extend(iam_errors)
 
     # Printed instructions
     print_secret_instructions()

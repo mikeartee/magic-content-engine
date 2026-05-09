@@ -1,0 +1,48 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "LambdaInvokeMceFunctions",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:InvokeFunction"
+      ],
+      "Resource": "arn:aws:lambda:*:*:function:mce-*"
+    },
+    {
+      "Sid": "DynamoDBCheckpointsReadWrite",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:Query"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:*:*:table/mce-checkpoints",
+        "arn:aws:dynamodb:*:*:table/mce-checkpoints/index/*",
+        "arn:aws:dynamodb:*:*:table/mce-run-history",
+        "arn:aws:dynamodb:*:*:table/mce-run-history/index/*"
+      ]
+    },
+    {
+      "Sid": "SESSendEmailApprovalGate",
+      "Effect": "Allow",
+      "Action": [
+        "ses:SendEmail",
+        "ses:SendRawEmail"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "CloudWatchLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:*:*:*"
+    }
+  ]
+}

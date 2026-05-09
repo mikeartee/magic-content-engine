@@ -1,0 +1,39 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "S3WriteOutput",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject"
+      ],
+      "Resource": "arn:aws:s3:::mce-second-brain/output/*"
+    },
+    {
+      "Sid": "BedrockInvokeSonnetAndHaiku",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel"
+      ],
+      "Resource": [
+        "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-*",
+        "arn:aws:bedrock:*::foundation-model/anthropic.claude-3-5-sonnet-*",
+        "arn:aws:bedrock:*::foundation-model/anthropic.claude-3-sonnet-*",
+        "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-*",
+        "arn:aws:bedrock:*:*:inference-profile/us.anthropic.claude-sonnet-*",
+        "arn:aws:bedrock:*:*:inference-profile/us.anthropic.claude-3-5-sonnet-*",
+        "arn:aws:bedrock:*:*:inference-profile/us.anthropic.claude-haiku-*"
+      ]
+    },
+    {
+      "Sid": "CloudWatchLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:*:*:*"
+    }
+  ]
+}
