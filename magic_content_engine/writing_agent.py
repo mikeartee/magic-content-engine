@@ -246,6 +246,9 @@ def build_blog_prompt(context: WritingContext, steering: dict[str, str]) -> str:
 
     Requirements: REQ-011.1–REQ-011.10
     """
+    import re as _re
+    from collections import defaultdict
+
     parts: list[str] = []
 
     # Voice rules
@@ -257,13 +260,35 @@ def build_blog_prompt(context: WritingContext, steering: dict[str, str]) -> str:
         parts.append("\n## Output template\n")
         parts.append(steering["template"])
 
-    # Articles with citations
-    parts.append("\n## Articles to cover (use inline APA in-text citations)\n")
+    # Pre-compute APA letter suffixes so the LLM uses the same assignments as the assembler.
+    def _author_year_key(ref: str) -> str:
+        m = _re.match(r'^([^(]+)\((\d{4})', ref.strip())
+        return f"{m.group(1).strip()}_{m.group(2)}" if m else ref[:30]
+
+    sorted_items = sorted(context.articles, key=lambda item: item.citation.reference_entry.lower())
+    groups: dict[str, list] = defaultdict(list)
+    for item in sorted_items:
+        key = _author_year_key(item.citation.reference_entry)
+        groups[key].append(item)
+
+    url_to_intext: dict[str, str] = {}
+    for key, items in groups.items():
+        if len(items) > 1:
+            for letter_idx, item in enumerate(items):
+                letter = chr(ord('a') + letter_idx)
+                base = item.citation.in_text_citation
+                disambiguated = _re.sub(r'(\d{4})\)', f'\\g<1>{letter})', base, count=1)
+                url_to_intext[item.article.url] = disambiguated
+        else:
+            url_to_intext[items[0].article.url] = items[0].citation.in_text_citation
+
+    # Articles with citations — include the exact in-text citation to use
+    parts.append("\n## Articles to cover (use EXACTLY the in-text citation shown for each)\n")
     for item in context.articles:
         a = item.article
-        c = item.citation
+        intext = url_to_intext.get(a.url, item.citation.in_text_citation)
         parts.append(f"- **{a.title}** ({a.source})")
-        parts.append(f"  Score: {a.relevance_score}  In-text: {c.in_text_citation}")
+        parts.append(f"  Score: {a.relevance_score}  In-text citation to use: {intext}")
         parts.append(f"  URL: {a.url}")
         if a.body:
             snippet = a.body[:600].replace("\n", " ").strip()
@@ -393,6 +418,8 @@ def assemble_blog_post(context: WritingContext, generated_body: str) -> str:
 
     parts.append("## References\n")
     for ref in disambiguated:
+        # Strip em-dashes from reference entries (e.g. in page titles from source sites)
+        ref = ref.replace('\u2014', ' - ').replace('\u2013', ' - ')
         parts.append(ref)
     parts.append("")
 
