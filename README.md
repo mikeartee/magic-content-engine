@@ -1,64 +1,54 @@
 # Magic Content Engine
 
-A scheduled, AWS-hosted agent application that automates weekly content research and generation. Built with the [Strands Agents SDK](https://github.com/strands-agents/sdk-python) (Python), deployed on [AgentCore Runtime](https://docs.aws.amazon.com/agentcore/), and orchestrated through two cooperating agents.
+A weekly content research and generation pipeline for an AWS Community Builder. It crawls AWS and Kiro IDE sources, scores articles by relevance, generates blog posts and other content outputs through a constrained multi-agent bullpen, and presents a review step before anything gets published.
 
-I built this content creation engine because as of 2026 I am an AWS Community Builder in the category "AI Engineering". I needed a way to track things that combined my knowledge of years of content creation on YouTube, and the main problem I found was this: It's difficult to keep up-to-date, even with all the best RSS feeds and sign-ups to press sites. Hopefully, we can help solve this problem, using this app, and another application that another AWS Builder created to drag things out of the Git Repos I create. Then we'll smoosh them together. 
+Built with Python 3.13, [Strands Agents SDK](https://github.com/strands-agents/sdk-python), AWS Lambda Durable Functions, Amazon Bedrock, DynamoDB, and SES. Runs locally via `scripts/run_local.py` or automatically on a Monday 9am NZT schedule via EventBridge Scheduler.
 
-This particular app is niched down on AI Engineering via AWS, but it can be easily modified for any type of search, just by changing the links in the `02-research-sources.md` steering file.
+## Why this exists
 
-Building in public, and getting articles/videos written is going to be instrumental in my learning journey. 
+Keeping up with the AWS AI Engineering ecosystem from Aotearoa New Zealand is genuinely hard. Re:Invent happens while NZ is asleep. Kiro changelogs drop without warning. Strands SDK updates land in GitHub before they hit any blog. This engine crawls the sources I care about, scores what's relevant, and drafts content so I can focus on the parts only I can write.
 
-## What it does
+## Architecture: the bullpen
 
-Every week (or on demand), the engine:
+Six constrained agents handle the pipeline. Each has an IAM execution role that enforces what it can and cannot do at the infrastructure level — not just the prompt level.
 
-1. Crawls 9 research sources across Kiro IDE, AgentCore, Strands, Bedrock, and the wider AWS ecosystem
-2. Deduplicates against previously covered articles stored in AgentCore Memory
-3. Scores each article for relevance to the AI Engineering on AWS niche (1-5 scale via Claude Haiku)
-4. Extracts metadata and builds APA 7th edition citations with BibTeX
-5. Presents a Weekly Brief with topic coverage gaps and engagement signals from dev.to
-6. Lets you pick which outputs to generate:
-   - Blog post (dev.to Markdown with inline citations)
-   - YouTube script + description
-   - CFP proposal (25-min and 45-min variants)
-   - User group session outline
-   - Weekly digest email
-7. Captures screenshots via AgentCore Browser (1440x900)
-8. Assembles everything into a structured output bundle
-9. Runs a Publish Gate review (approve / skip / hold with embargo / review)
-10. Uploads approved files to S3
+| Agent | Role | IAM constraints |
+|---|---|---|
+| **Researcher** | Crawls 8 sources + reads vault from S3 | S3 GetObject (ami-context/ only), Bedrock Haiku. No S3 PutObject, no SES. |
+| **Desk Editor** | Research brief → content brief | Bedrock Sonnet only. No S3, no SES. |
+| **Writer** | Content brief → output bundle | S3 PutObject (output/ only), Bedrock Sonnet + Haiku. No SES. |
+| **Subeditor** | Reviews content, returns publish/revise/spike verdict | S3 GetObject (output/ only), Bedrock Sonnet. No writes. |
+| **Publisher** | Uploads approved files to S3, sends SES notification | S3 PutObject (output/ only), SES SendEmail. No S3 DeleteObject. |
+| **Archivist (Whakaaro)** | Nightly vault summarisation | S3 GetObject (ami-context/), S3 PutObject (archive/). No SES. |
 
-## Architecture
+The **Editor-in-Chief** orchestrates the pipeline as a Lambda Durable Function using `step()` for each agent and `wait()` for the approval gate. It pauses indefinitely at zero compute cost until you approve or reject via email link.
 
-Two Strands agents handle the work:
+The revision loop: when the Subeditor returns `revise`, the Writer gets another pass with the feedback. Maximum 2 cycles per file before escalation to manual review.
 
-- **Orchestrator_Agent** coordinates the full pipeline: crawling, scoring, citations, screenshots, bundle assembly, S3 upload
-- **Writing_Sub_Agent** generates content outputs using steering files loaded at runtime from `.kiro/steering/`
+## Research sources
 
-Model routing is cost-optimised: Claude Haiku handles structured tasks (scoring, metadata, citations, digest), Claude Sonnet handles narrative writing (blog, script, CFP, user group).
+8 sources crawled via HTTP GET, RSS, and GitHub API — no browser required:
 
-### AWS services used
+1. kiro.dev/changelog/ide/
+2. kiro.dev/changelog/cli/
+3. github.com/kirodotdev/Kiro/issues (GitHub API)
+4. aws.amazon.com/new/ (keyword filter: bedrock, agentcore, kiro, lambda)
+5. aws.amazon.com/blogs/machine-learning/
+6. community.aws (RSS)
+7. github.com/awslabs/ (GitHub API, new releases)
+8. strandsagents.com
 
-| Service | Role |
-|---|---|
-| AgentCore Runtime | Hosts both agents |
-| AgentCore Browser | Crawls sources, captures screenshots |
-| AgentCore Memory | Short-term session state + long-term persistence |
-| AgentCore Gateway | Exposes `invoke_content_run` as MCP tool |
-| AgentCore Identity | Manages API credentials in production |
-| AgentCore Observability | Trace spans per workflow step |
-| Amazon Bedrock | Claude Haiku + Claude Sonnet |
-| Amazon S3 | Output bundle storage |
-| Amazon SES | Embargo release notifications |
-| Amazon EventBridge | Weekly cron trigger |
+## Vault context
 
-## Getting started
+An Obsidian vault on my PC is synced to `s3://mce-second-brain/ami-context/` every Sunday at 10pm NZT via Windows Task Scheduler. The Researcher reads from this alongside the external sources, so generated content reflects what I've actually been building — not just what AWS announced.
+
+## Running locally
 
 ### Prerequisites
 
-- Python 3.11+
-- An AWS account with Bedrock model access (Claude Haiku, Claude Sonnet)
-- [uv](https://docs.astral.sh/uv/) or pip for dependency management
+- Python 3.13
+- AWS credentials configured for ap-southeast-2
+- `.env` file populated (copy `.env.example` and fill in real values)
 
 ### Install
 
@@ -70,28 +60,42 @@ pip install -e ".[dev]"
 
 ### Configure
 
-Copy the example env file and fill in your credentials:
-
 ```bash
 cp .env.example .env
+# Fill in: APPROVAL_TOKEN_SECRET, SES_SENDER_EMAIL, SES_RECIPIENT_EMAIL,
+#          GITHUB_TOKEN, VAULT_PATH, and the MCE_* DynamoDB/S3 variables
 ```
 
-You need at minimum:
-- `GITHUB_TOKEN` for GitHub API access
-- `DEVTO_API_KEY` and `DEVTO_USERNAME` for engagement tracking
-- `SES_SENDER_EMAIL` and `SES_RECIPIENT_EMAIL` for embargo notifications
+Generate your approval token secret:
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
 
-The `.env` file is gitignored. In production, credentials are managed by AgentCore Identity.
+### Provision infrastructure (once)
+
+```bash
+python scripts/create_infrastructure.py
+```
+
+Creates the `mce-second-brain` S3 bucket and all DynamoDB tables in ap-southeast-2.
 
 ### Run
 
 ```bash
-# Manual run
-python -m magic_content_engine --source manual
+# Dry run (stub article, no real crawl — good for testing the pipeline)
+python scripts/run_local.py --topic "Kiro IDE latest features" --outputs blog --dry-run
 
-# With a specific date
-python -m magic_content_engine --source manual --run-date 2026-03-16
+# Real run (crawls all 8 sources, takes 2-3 minutes)
+python scripts/run_local.py --topic "Kiro IDE latest features" --outputs blog
+
+# Multiple outputs
+python scripts/run_local.py --topic "AgentCore GA" --outputs blog youtube
+
+# All outputs
+python scripts/run_local.py --topic "Strands SDK update" --outputs all
 ```
+
+The pipeline pauses at the approval gate and prints a verdict summary. Type `y` to publish to S3 or `N` to keep files local.
 
 ### Test
 
@@ -99,42 +103,40 @@ python -m magic_content_engine --source manual --run-date 2026-03-16
 pytest magic_content_engine/ -v
 ```
 
-510 tests covering all modules. Uses [Hypothesis](https://hypothesis.readthedocs.io/) for property-based testing where applicable.
+Property-based tests use [Hypothesis](https://hypothesis.readthedocs.io/).
 
-## Project structure
+## Vault sync (Windows Task Scheduler)
+
+The vault sync runs automatically every Sunday at 10pm NZT. Setup instructions are in `scripts/README.md`. The task is already configured — run `schtasks /query /tn "MCE Vault Sync"` to verify.
+
+## Output bundle
+
+Each run produces a directory under `output/YYYY-MM-DD-[slug]/`:
 
 ```
-magic_content_engine/
-  orchestrator.py      # Main workflow (20 steps)
-  writing_agent.py     # Content generation (5 output types)
-  crawler.py           # Source crawling (9 sources, retry logic)
-  scoring.py           # Relevance scoring + engagement weighting
-  metadata.py          # Metadata extraction with fallbacks
-  citation.py          # APA 7th citations + BibTeX
-  deduplication.py     # Article dedup against long-term memory
-  topic_coverage.py    # Topic gap analysis + recommended focus
-  engagement.py        # dev.to API integration
-  weekly_brief.py      # Pre-run summary generation
-  user_interaction.py  # Article confirmation + output selection
-  publish_gate.py      # Approve / skip / hold / review workflow
-  embargo.py           # Held item release checks + SES
-  screenshots.py       # AgentCore Browser screenshot capture
-  slug.py              # Kebab-case slug generation
-  bundle.py            # Output directory assembly
-  s3_upload.py         # S3 upload with exponential backoff
-  memory.py            # Session + long-term memory (local JSON / AgentCore)
-  identity.py          # Credential provider (local .env / AgentCore)
-  gateway.py           # MCP tool registration via AgentCore Gateway
-  observability.py     # Trace spans + error events
-  models.py            # All dataclasses
-  model_router.py      # Haiku/Sonnet task routing
-  config.py            # Environment variable loading
-  errors.py            # Error collection + retry logic
+output/2026-05-10-kiro-ide-latest-features/
+  post.md                    # blog post (if selected)
+  script.md                  # YouTube script (if selected)
+  description.txt            # YouTube description (if selected)
+  cfp-proposal.md            # CFP proposal (if selected)
+  usergroup-session.md       # user group session (if selected)
+  digest-email.txt           # digest email (if selected)
+  references.bib             # APA citations (always)
+  cost-estimate.txt          # per-model token costs (always)
+  agent-log.jsonl            # structured decision log (always)
+  checkpoints.json           # pipeline checkpoints (always)
+  screenshots/               # placeholder — real screenshots in future
 ```
+
+## S3 key format
+
+Files upload to `s3://mce-second-brain/output/YYYY-MM-DD-[slug]/[filename]`.
+
+The `output/` prefix is hardcoded in the admin importer and must not change.
 
 ## Steering files
 
-Voice rules and output templates live in `.kiro/steering/` and are loaded at runtime, not baked into agent prompts:
+Voice rules and output templates live in `.kiro/steering/` and are loaded at runtime:
 
 | File | Purpose |
 |---|---|
@@ -145,67 +147,40 @@ Voice rules and output templates live in `.kiro/steering/` and are loaded at run
 | `05-output-talks.md` | CFP proposal + user group session template |
 | `06-model-routing-and-bundle.md` | Model routing table + bundle structure |
 
-## Output bundle
+## Model routing
 
-Each run produces a directory under `output/YYYY-MM-DD-[slug]/`:
+| Task | Model |
+|---|---|
+| Relevance scoring, metadata extraction | Claude Haiku (`au.anthropic.claude-haiku-4-5-20251001-v1:0`) |
+| Editorial decisions, quality review | Claude Sonnet (`au.anthropic.claude-sonnet-4-6`) |
+| Blog post, YouTube script, CFP, user group | Claude Sonnet |
+| Digest email, Publisher email formatting | Claude Haiku |
 
-```
-output/2026-03-16-agentcore-memory-launch/
-  post.md                    # if blog selected
-  script.md                  # if YouTube selected
-  description.txt            # if YouTube selected
-  cfp-proposal.md            # if CFP selected
-  usergroup-session.md       # if user group selected
-  digest-email.txt           # if digest selected
-  references.bib             # always (APA citations)
-  cost-estimate.txt          # always (per-model token costs)
-  agent-log.json             # always (full run metadata)
-  screenshots/
-    research/                # article landing pages
-    console-runtime.png
-    console-gateway.png
-    console-memory.png
-    console-observability.png
-    sample-output.png
-```
+Uses `au.` inference profile prefix for ap-southeast-2 cross-region routing.
 
-## S3 Key Format
+## AWS services
 
-The engine uploads files to S3 using this key pattern:
-
-```
-output/{YYYY-MM-DD}-{slug}/post.md
-```
-
-- `{YYYY-MM-DD}` is the run date, always exactly 10 characters (ISO 8601 via `date.isoformat()`)
-- `{slug}` is a kebab-case string derived from the topic, matching `^[a-z0-9]+(-[a-z0-9]+)*$`
-- If the topic produces an empty slug after normalisation, the fallback value is `content`
-
-The `S3_KEY_PREFIX` environment variable controls the root prefix. It must be set to `output/` for the mikefromnz admin importer to discover files. The importer hardcodes `Prefix: 'output/'` in its S3 list call, so any other value will silently break discovery.
-
-The importer parses the dir-name segment using fixed-offset slicing: `slice(0, 10)` extracts the date, `slice(11)` extracts the slug. This only works correctly when the date segment is exactly 10 characters and the separator between date and slug is a single `-` at position 10. The engine's use of `date.isoformat()` guarantees both conditions today.
-
-## Publish Gate
-
-After content generation, each output goes through a review step:
-
-- **Approve** adds the file to the S3 upload list
-- **Skip** keeps it locally only
-- **Hold** moves it to `output/held/` with an embargo release date
-- **Review** moves it to `output/review/` for manual editing
-
-Held items are checked at the start of each run. When a release date arrives, you get an SES notification and can choose to publish.
+| Service | Role |
+|---|---|
+| Amazon Bedrock | Claude Haiku + Claude Sonnet via `au.` inference profiles |
+| Amazon S3 (`mce-second-brain`) | Vault context feed, output bundles, archive |
+| Amazon DynamoDB | Checkpoints, run history (AMI_Log), topic coverage, deduplication, held items |
+| Amazon SES | Approval gate email, publication notification |
+| EventBridge Scheduler | Monday 9am NZT trigger (`Pacific/Auckland` timezone) |
+| AWS Lambda | Each agent runs as a separate Lambda with its own IAM execution role |
 
 ## Region note
 
-AgentCore is not yet available in the Auckland region (ap-southeast-4). The closest supported region is Sydney (ap-southeast-2). This engine deploys to Sydney for now. When AgentCore lands in Auckland, that will be worth a content run of its own.
-
-So, we'll be testing this out on my dev.to in the coming months to create content for our blog, and videos to come in the future. The main thrust of this project is to keep the human-in-the-loop. Keep an eye out for the blog posts on: https://dev.to/mikeartee
+AgentCore is not yet available in the Auckland region (ap-southeast-4). The closest supported region is Sydney (ap-southeast-2). All Lambda functions, DynamoDB tables, and S3 buckets are in ap-southeast-2. When AgentCore lands in Auckland, that will be worth a content run of its own.
 
 ## Spec
 
-The full requirements, design, and implementation plan live in `.kiro/specs/magic-content-engine/`. Built using Kiro's spec-driven development workflow.
+Full requirements, design, and implementation plan live in `.kiro/specs/bullpen-architecture/`. Built using Kiro's spec-driven development workflow.
+
+## What's next
+
+- **Issue #18**: Local web GUI — topic idea suggestions, pipeline runner, inline editor, one-click publish to dev.to
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+MIT
