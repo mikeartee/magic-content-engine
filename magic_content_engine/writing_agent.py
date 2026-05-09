@@ -279,10 +279,16 @@ def build_blog_prompt(context: WritingContext, steering: dict[str, str]) -> str:
         "2. Build walkthrough: step-by-step guide with inline APA in-text citations "
         "like (Author, 2025) where relevant. Reference console screenshots as needed "
         "(e.g. `![Console](screenshots/console-gateway.png)`).\n"
+        "   IMPORTANT: Wrap ALL code examples, shell commands, JSON, YAML, and config "
+        "snippets in fenced code blocks with the appropriate language tag "
+        "(e.g. ```bash, ```json, ```yaml). Never leave code as raw inline text.\n"
         "3. Cost breakdown: a Markdown table with columns Service, Usage, "
         "Estimated Cost.\n"
         "4. Sample output: describe what the output looks like. "
         "Reference `![Sample output](screenshots/sample-output.png)`.\n\n"
+        "When multiple sources share the same author and year (e.g. multiple Amazon Web Services 2026 sources), "
+        "disambiguate with letter suffixes in both in-text citations "
+        "(e.g. Amazon Web Services, 2026a; Amazon Web Services, 2026b).\n\n"
         "Do NOT write the hook, Aotearoa angle, or closing. "
         "Those are placeholder sections added separately.\n"
         "Do NOT open any paragraph with the word 'I'.\n"
@@ -348,14 +354,46 @@ def assemble_blog_post(context: WritingContext, generated_body: str) -> str:
         "<!-- MIKE: [Closing with CTA and GitHub link, ~50 words] -->\n"
     )
 
-    # --- References section (APA citations sorted alphabetically) ---
+    # --- References section (APA citations sorted alphabetically, with disambiguation) ---
     sorted_citations = sorted(
         context.articles,
         key=lambda item: item.citation.reference_entry.lower(),
     )
+
+    # Disambiguate citations that share the same author+year with letter suffixes
+    # Group by (author_surname, year) to detect duplicates
+    import re as _re
+    from collections import defaultdict
+
+    def _extract_author_year(ref: str) -> str:
+        """Extract 'Surname, Year' key from APA reference entry."""
+        m = _re.match(r'^([^(]+)\((\d{4})', ref.strip())
+        if m:
+            return f"{m.group(1).strip()}_{m.group(2)}"
+        return ref[:30]
+
+    groups: dict[str, list[int]] = defaultdict(list)
+    for i, item in enumerate(sorted_citations):
+        key = _extract_author_year(item.citation.reference_entry)
+        groups[key].append(i)
+
+    # Build disambiguated reference entries
+    disambiguated: list[str] = [item.citation.reference_entry for item in sorted_citations]
+    for key, indices in groups.items():
+        if len(indices) > 1:
+            for letter_idx, i in enumerate(indices):
+                letter = chr(ord('a') + letter_idx)
+                # Insert letter after the year: (2026) → (2026a)
+                disambiguated[i] = _re.sub(
+                    r'\((\d{4})\)',
+                    lambda m, l=letter: f"({m.group(1)}{l})",
+                    disambiguated[i],
+                    count=1,
+                )
+
     parts.append("## References\n")
-    for item in sorted_citations:
-        parts.append(item.citation.reference_entry)
+    for ref in disambiguated:
+        parts.append(ref)
     parts.append("")
 
     return "\n".join(parts)
