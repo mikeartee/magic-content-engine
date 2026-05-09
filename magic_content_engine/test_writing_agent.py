@@ -345,7 +345,7 @@ class TestAssembleBlogPost:
     def test_contains_hook_placeholder(self):
         ctx = _make_context("blog")
         result = assemble_blog_post(ctx, "Body content here.")
-        assert "<!-- MIKE: [Write a personal hook." in result
+        assert "<!-- MIKE: [Write personal hook" in result
         assert "~100 words" in result
 
     def test_hook_includes_suggested_angles(self):

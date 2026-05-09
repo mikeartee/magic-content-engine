@@ -287,7 +287,12 @@ def build_blog_prompt(context: WritingContext, steering: dict[str, str]) -> str:
         "Those are placeholder sections added separately.\n"
         "Do NOT open any paragraph with the word 'I'.\n"
         "Do NOT use banned phrases: leverage, empower, unlock, dive into, game-changer.\n"
-        "Do NOT use em-dashes."
+        "Do NOT use em-dashes.\n"
+        "Do NOT wrap your output in a markdown code fence (no ```markdown or ``` blocks). "
+        "Return plain Markdown text only.\n"
+        "Do NOT include MIKE placeholder comments in your output. "
+        "Do NOT include a References section. "
+        "Those are added separately by the assembler."
     )
 
     # Run metadata
@@ -324,12 +329,9 @@ def assemble_blog_post(context: WritingContext, generated_body: str) -> str:
 
     # --- Hook placeholder with agent-suggested angles ---
     top_titles = [item.article.title for item in context.articles[:3]]
-    angle_lines = "\n".join(f"  - {t}" for t in top_titles) if top_titles else "  - (no articles available)"
+    angles = ", ".join(f'"{t}"' for t in top_titles) if top_titles else '"(no articles available)"'
     parts.append(
-        "<!-- MIKE: [Write a personal hook. 2-3 agent-suggested angles below, ~100 words]\n"
-        f"  Suggested angles based on top-scored articles:\n"
-        f"{angle_lines}\n"
-        "-->\n"
+        f"<!-- MIKE: [Write personal hook using one of these angles: {angles}, ~100 words] -->\n"
     )
 
     # --- Generated body (architecture, build walkthrough, cost, sample output) ---
@@ -407,7 +409,8 @@ def build_youtube_prompt(context: WritingContext, steering: dict[str, str]) -> s
         "Those are handled separately.\n"
         "Do NOT open any paragraph with the word 'I'.\n"
         "Do NOT use banned phrases: leverage, empower, unlock, dive into, game-changer.\n"
-        "Do NOT use em-dashes."
+        "Do NOT use em-dashes.\n"
+        "Do NOT wrap your output in a markdown code fence. Return plain Markdown text only."
     )
 
     # Run metadata
@@ -545,7 +548,8 @@ def build_cfp_prompt(context: WritingContext, steering: dict[str, str]) -> str:
         "personal note, or events list. Those are added separately.\n"
         "Do NOT open any paragraph with the word 'I'.\n"
         "Do NOT use banned phrases: leverage, empower, unlock, dive into, game-changer.\n"
-        "Do NOT use em-dashes."
+        "Do NOT use em-dashes.\n"
+        "Do NOT wrap your output in a markdown code fence. Return plain Markdown text only."
     )
 
     # Run metadata
@@ -696,7 +700,8 @@ def build_usergroup_prompt(context: WritingContext, steering: dict[str, str]) ->
         "Those are added separately.\n"
         "Do NOT open any paragraph with the word 'I'.\n"
         "Do NOT use banned phrases: leverage, empower, unlock, dive into, game-changer.\n"
-        "Do NOT use em-dashes."
+        "Do NOT use em-dashes.\n"
+        "Do NOT wrap your output in a markdown code fence. Return plain Markdown text only."
     )
 
     # Run metadata
