@@ -10,9 +10,9 @@ What this script does:
   3. Creates DynamoDB table mce-topic-coverage (topic)
   4. Creates DynamoDB table mce-deduplication (article_url)
   5. Creates DynamoDB table mce-held-items (filename + run_date)
-  6. Prints Secrets Manager instructions
-  7. Prints Lambda deployment instructions
-  8. Prints EventBridge Scheduler instructions
+  6. Creates EventBridge Scheduler rules for Editor-in-Chief and Archivist
+  7. Prints Secrets Manager instructions
+  8. Prints Lambda deployment instructions
 
 All DynamoDB tables use on-demand billing (PAY_PER_REQUEST).
 
@@ -57,6 +57,23 @@ HELD_ITEMS_TABLE = "mce-held-items"
 LEGACY_TABLE = "magic-content-engine"
 SECRET_NAME = "magic-content-engine/credentials"
 LAMBDA_FUNCTION = "magic-content-engine"
+
+# --- EventBridge Scheduler ---
+# Both schedules use Pacific/Auckland timezone and FLEXIBLE_TIME_WINDOW OFF.
+SCHEDULE_EDITOR_IN_CHIEF = "mce-editor-in-chief-weekly"
+SCHEDULE_ARCHIVIST = "mce-archivist-nightly"
+
+# cron(0 9 ? * MON *) — Monday 9am NZT
+SCHEDULE_EXPR_EDITOR_IN_CHIEF = "cron(0 9 ? * MON *)"
+
+# cron(0 23 * * ? *) — nightly 11pm NZT
+SCHEDULE_EXPR_ARCHIVIST = "cron(0 23 * * ? *)"
+
+SCHEDULE_TIMEZONE = "Pacific/Auckland"
+
+# Lambda function names targeted by the schedules
+LAMBDA_EDITOR_IN_CHIEF = "mce-editor-in-chief"
+LAMBDA_ARCHIVIST = "mce-archivist"
 
 
 # ---------------------------------------------------------------------------
@@ -229,11 +246,110 @@ def create_held_items_table(client: "boto3.client") -> None:
 
 
 # ---------------------------------------------------------------------------
+# EventBridge Scheduler
+# ---------------------------------------------------------------------------
+
+def create_eventbridge_schedules(account_id: str, scheduler_role_arn: str) -> None:
+    """Create EventBridge Scheduler rules for the Editor-in-Chief and Archivist.
+
+    Both rules:
+    - Use Pacific/Auckland timezone
+    - Use FLEXIBLE_TIME_WINDOW Mode=OFF (fire at the exact scheduled time)
+    - Target the respective Lambda function ARN
+
+    Args:
+        account_id: AWS account ID (12-digit string).
+        scheduler_role_arn: ARN of the IAM role that EventBridge Scheduler
+            uses to invoke the Lambda functions. Must have
+            lambda:InvokeFunction on both target Lambdas.
+    """
+    print(f"\n[6/7] Creating EventBridge Scheduler rules")
+    client = boto3.client("scheduler", region_name=REGION)
+
+    schedules = [
+        {
+            "name": SCHEDULE_EDITOR_IN_CHIEF,
+            "expression": SCHEDULE_EXPR_EDITOR_IN_CHIEF,
+            "lambda_name": LAMBDA_EDITOR_IN_CHIEF,
+            "description": "Editor-in-Chief weekly pipeline — Monday 9am NZT",
+        },
+        {
+            "name": SCHEDULE_ARCHIVIST,
+            "expression": SCHEDULE_EXPR_ARCHIVIST,
+            "lambda_name": LAMBDA_ARCHIVIST,
+            "description": "Archivist (Whakaaro) nightly archive — 11pm NZT",
+        },
+    ]
+
+    for sched in schedules:
+        lambda_arn = (
+            f"arn:aws:lambda:{REGION}:{account_id}:function:{sched['lambda_name']}"
+        )
+        _create_or_update_schedule(
+            client=client,
+            name=sched["name"],
+            schedule_expression=sched["expression"],
+            timezone=SCHEDULE_TIMEZONE,
+            target_arn=lambda_arn,
+            scheduler_role_arn=scheduler_role_arn,
+            description=sched["description"],
+        )
+
+
+def _create_or_update_schedule(
+    client: "boto3.client",
+    name: str,
+    schedule_expression: str,
+    timezone: str,
+    target_arn: str,
+    scheduler_role_arn: str,
+    description: str,
+) -> None:
+    """Create an EventBridge Scheduler schedule, or update it if it already exists.
+
+    Uses FLEXIBLE_TIME_WINDOW Mode=OFF so the schedule fires at the exact
+    cron time with no flexibility window.
+    """
+    target = {
+        "Arn": target_arn,
+        "RoleArn": scheduler_role_arn,
+        "Input": '{"source": "scheduled"}',
+    }
+    flexible_time_window = {"Mode": "OFF"}
+
+    try:
+        client.get_schedule(Name=name)
+        # Schedule exists — update it to ensure expression/timezone are correct.
+        client.update_schedule(
+            Name=name,
+            ScheduleExpression=schedule_expression,
+            ScheduleExpressionTimezone=timezone,
+            FlexibleTimeWindow=flexible_time_window,
+            Target=target,
+            Description=description,
+        )
+        print(f"  ✓ Schedule updated: {name}  ({schedule_expression}, {timezone})")
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ResourceNotFoundException":
+            client.create_schedule(
+                Name=name,
+                ScheduleExpression=schedule_expression,
+                ScheduleExpressionTimezone=timezone,
+                FlexibleTimeWindow=flexible_time_window,
+                Target=target,
+                Description=description,
+            )
+            print(f"  ✓ Schedule created: {name}  ({schedule_expression}, {timezone})")
+        else:
+            raise
+
+
+# ---------------------------------------------------------------------------
 # Instructions (printed, not executed)
 # ---------------------------------------------------------------------------
 
 def print_secret_instructions() -> None:
-    print(f"\n[6/6] Create Secrets Manager secret (do this manually in the console or CLI)")
+    print(f"\n[7/7] Create Secrets Manager secret (do this manually in the console or CLI)")
     secret_value = {
         "github_token": "ghp_YOUR_GITHUB_TOKEN_HERE",
         "devto_api_key": "YOUR_DEVTO_API_KEY_HERE",
@@ -402,10 +518,26 @@ def main() -> None:
             print(msg, file=sys.stderr)
             errors.append(msg)
 
+    # EventBridge Scheduler
+    # Resolve the account ID from STS so the Lambda ARNs are correct.
+    try:
+        sts = boto3.client("sts", region_name=REGION)
+        account_id = sts.get_caller_identity()["Account"]
+        scheduler_role_arn = (
+            f"arn:aws:iam::{account_id}:role/eventbridge-scheduler-role"
+        )
+        create_eventbridge_schedules(
+            account_id=account_id,
+            scheduler_role_arn=scheduler_role_arn,
+        )
+    except Exception as exc:
+        msg = f"  ✗ create_eventbridge_schedules failed: {exc}"
+        print(msg, file=sys.stderr)
+        errors.append(msg)
+
     # Printed instructions
     print_secret_instructions()
     print_lambda_instructions()
-    print_eventbridge_instructions()
 
     print("=" * 60)
     if errors:
