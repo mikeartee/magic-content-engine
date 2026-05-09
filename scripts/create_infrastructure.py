@@ -37,8 +37,8 @@ S3_BUCKET = "mce-second-brain"
 
 # S3 key prefixes (documented here; the bucket itself has no prefix enforcement)
 S3_KEY_PREFIXES = {
-    "ami_context": "ami-context/",   # nightly vault sync feed — Researcher reads from here
-    "output": "output/",             # published content — hardcoded in admin importer, do not change
+    "ami_context": "ami-context/",   # nightly vault sync feed ΓÇö Researcher reads from here
+    "output": "output/",             # published content ΓÇö hardcoded in admin importer, do not change
     "archive": "archive/",           # Archivist (Whakaaro) long-term knowledge archive
 }
 
@@ -64,31 +64,31 @@ LAMBDA_FUNCTION = "magic-content-engine"
 # Policy documents live in docs/iam-policies/ relative to the repo root.
 IAM_ROLES: dict[str, dict] = {
     "mce-researcher-role": {
-        "description": "Researcher Lambda — read-only S3 ami-context, Bedrock Haiku, CloudWatch Logs",
+        "description": "Researcher Lambda ΓÇö read-only S3 ami-context, Bedrock Haiku, CloudWatch Logs",
         "policy_file": "researcher-policy.json",
     },
     "mce-desk-editor-role": {
-        "description": "Desk Editor Lambda — Bedrock Sonnet only, CloudWatch Logs",
+        "description": "Desk Editor Lambda ΓÇö Bedrock Sonnet only, CloudWatch Logs",
         "policy_file": "desk-editor-policy.json",
     },
     "mce-writer-role": {
-        "description": "Writer Lambda — S3 PutObject output/* only, Bedrock Sonnet+Haiku, CloudWatch Logs",
+        "description": "Writer Lambda ΓÇö S3 PutObject output/* only, Bedrock Sonnet+Haiku, CloudWatch Logs",
         "policy_file": "writer-policy.json",
     },
     "mce-subeditor-role": {
-        "description": "Subeditor Lambda — S3 GetObject output/* only, Bedrock Sonnet, CloudWatch Logs",
+        "description": "Subeditor Lambda ΓÇö S3 GetObject output/* only, Bedrock Sonnet, CloudWatch Logs",
         "policy_file": "subeditor-policy.json",
     },
     "mce-publisher-role": {
-        "description": "Publisher Lambda — S3 GetObject+PutObject output/*, SES SendEmail, CloudWatch Logs",
+        "description": "Publisher Lambda ΓÇö S3 GetObject+PutObject output/*, SES SendEmail, CloudWatch Logs",
         "policy_file": "publisher-policy.json",
     },
     "mce-archivist-role": {
-        "description": "Archivist Lambda — S3 GetObject ami-context/*, S3 PutObject archive/*, CloudWatch Logs",
+        "description": "Archivist Lambda ΓÇö S3 GetObject ami-context/*, S3 PutObject archive/*, CloudWatch Logs",
         "policy_file": "archivist-policy.json",
     },
     "mce-editor-in-chief-role": {
-        "description": "Editor-in-Chief Lambda — Lambda InvokeFunction mce-*, DynamoDB checkpoints+run-history, SES, CloudWatch Logs",
+        "description": "Editor-in-Chief Lambda ΓÇö Lambda InvokeFunction mce-*, DynamoDB checkpoints+run-history, SES, CloudWatch Logs",
         "policy_file": "editor-in-chief-policy.json",
     },
 }
@@ -105,6 +105,23 @@ _LAMBDA_TRUST_POLICY = json.dumps({
     ],
 })
 
+# --- EventBridge Scheduler ---
+# Both schedules use Pacific/Auckland timezone and FLEXIBLE_TIME_WINDOW OFF.
+SCHEDULE_EDITOR_IN_CHIEF = "mce-editor-in-chief-weekly"
+SCHEDULE_ARCHIVIST = "mce-archivist-nightly"
+
+# cron(0 9 ? * MON *) — Monday 9am NZT
+SCHEDULE_EXPR_EDITOR_IN_CHIEF = "cron(0 9 ? * MON *)"
+
+# cron(0 23 * * ? *) — nightly 11pm NZT
+SCHEDULE_EXPR_ARCHIVIST = "cron(0 23 * * ? *)"
+
+SCHEDULE_TIMEZONE = "Pacific/Auckland"
+
+# Lambda function names targeted by the schedules
+LAMBDA_EDITOR_IN_CHIEF = "mce-editor-in-chief"
+LAMBDA_ARCHIVIST = "mce-archivist"
+
 
 # ---------------------------------------------------------------------------
 # S3
@@ -116,7 +133,7 @@ def create_s3_bucket() -> None:
 
     try:
         client.head_bucket(Bucket=S3_BUCKET)
-        print(f"  ✓ Bucket already exists — skipping creation")
+        print(f"  Γ£ô Bucket already exists ΓÇö skipping creation")
     except ClientError as e:
         error_code = e.response["Error"]["Code"]
         if error_code in ("404", "NoSuchBucket"):
@@ -124,10 +141,10 @@ def create_s3_bucket() -> None:
                 Bucket=S3_BUCKET,
                 CreateBucketConfiguration={"LocationConstraint": REGION},
             )
-            print(f"  ✓ Bucket created: s3://{S3_BUCKET}")
+            print(f"  Γ£ô Bucket created: s3://{S3_BUCKET}")
         elif error_code == "403":
             print(
-                f"  ✗ Bucket {S3_BUCKET!r} exists but is owned by another account. "
+                f"  Γ£ù Bucket {S3_BUCKET!r} exists but is owned by another account. "
                 "Choose a different bucket name.",
                 file=sys.stderr,
             )
@@ -140,7 +157,7 @@ def create_s3_bucket() -> None:
         Bucket=S3_BUCKET,
         VersioningConfiguration={"Status": "Enabled"},
     )
-    print(f"  ✓ Versioning enabled on s3://{S3_BUCKET}")
+    print(f"  Γ£ô Versioning enabled on s3://{S3_BUCKET}")
 
     # Block all public access
     client.put_public_access_block(
@@ -152,9 +169,9 @@ def create_s3_bucket() -> None:
             "RestrictPublicBuckets": True,
         },
     )
-    print(f"  ✓ Public access blocked on s3://{S3_BUCKET}")
+    print(f"  Γ£ô Public access blocked on s3://{S3_BUCKET}")
 
-    print(f"\n  Key prefixes (logical — no physical folders required):")
+    print(f"\n  Key prefixes (logical ΓÇö no physical folders required):")
     for name, prefix in S3_KEY_PREFIXES.items():
         print(f"    s3://{S3_BUCKET}/{prefix}  ({name})")
 
@@ -174,7 +191,7 @@ def _create_table(
 
     try:
         client.describe_table(TableName=table_name)
-        print(f"  ✓ Table already exists — skipping")
+        print(f"  Γ£ô Table already exists ΓÇö skipping")
         return
     except ClientError as e:
         if e.response["Error"]["Code"] != "ResourceNotFoundException":
@@ -190,7 +207,7 @@ def _create_table(
     waiter = client.get_waiter("table_exists")
     print(f"  Waiting for table to become active...")
     waiter.wait(TableName=table_name)
-    print(f"  ✓ Table created: {table_name}")
+    print(f"  Γ£ô Table created: {table_name}")
 
 
 # ---------------------------------------------------------------------------
@@ -198,10 +215,10 @@ def _create_table(
 # ---------------------------------------------------------------------------
 
 def create_checkpoints_table(client: "boto3.client") -> None:
-    """mce-checkpoints — pipeline checkpoint/resume.
+    """mce-checkpoints ΓÇö pipeline checkpoint/resume.
 
-    Partition key : run_id     (S) — unique identifier for a pipeline run
-    Sort key      : agent_type (S) — researcher | desk_editor | writer | subeditor | publisher | archivist
+    Partition key : run_id     (S) ΓÇö unique identifier for a pipeline run
+    Sort key      : agent_type (S) ΓÇö researcher | desk_editor | writer | subeditor | publisher | archivist
     """
     _create_table(
         client=client,
@@ -219,9 +236,9 @@ def create_checkpoints_table(client: "boto3.client") -> None:
 
 
 def create_topic_coverage_table(client: "boto3.client") -> None:
-    """mce-topic-coverage — tracks which topics have been covered.
+    """mce-topic-coverage ΓÇö tracks which topics have been covered.
 
-    Partition key : topic (S) — the topic string from BullpenBrief
+    Partition key : topic (S) ΓÇö the topic string from BullpenBrief
     """
     _create_table(
         client=client,
@@ -237,9 +254,9 @@ def create_topic_coverage_table(client: "boto3.client") -> None:
 
 
 def create_deduplication_table(client: "boto3.client") -> None:
-    """mce-deduplication — prevents re-publishing the same article URL.
+    """mce-deduplication ΓÇö prevents re-publishing the same article URL.
 
-    Partition key : article_url (S) — the canonical URL of the article
+    Partition key : article_url (S) ΓÇö the canonical URL of the article
     """
     _create_table(
         client=client,
@@ -255,10 +272,10 @@ def create_deduplication_table(client: "boto3.client") -> None:
 
 
 def create_held_items_table(client: "boto3.client") -> None:
-    """mce-held-items — content held for manual review.
+    """mce-held-items ΓÇö content held for manual review.
 
-    Partition key : filename (S)  — the content filename
-    Sort key      : run_date (S)  — ISO 8601 date of the pipeline run
+    Partition key : filename (S)  ΓÇö the content filename
+    Sort key      : run_date (S)  ΓÇö ISO 8601 date of the pipeline run
     """
     _create_table(
         client=client,
@@ -283,7 +300,7 @@ def create_iam_roles(policy_dir: str | None = None) -> list[str]:
     """Create per-agent IAM execution roles and attach inline policies.
 
     Each Lambda agent gets a dedicated role with only the permissions it needs.
-    Roles are idempotent — re-running skips roles that already exist.
+    Roles are idempotent ΓÇö re-running skips roles that already exist.
 
     Args:
         policy_dir: Path to the directory containing policy JSON files.
@@ -294,7 +311,7 @@ def create_iam_roles(policy_dir: str | None = None) -> list[str]:
         List of error messages encountered (empty on full success).
     """
     if policy_dir is None:
-        # scripts/ → repo root → docs/iam-policies/
+        # scripts/ ΓåÆ repo root ΓåÆ docs/iam-policies/
         repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         policy_dir = os.path.join(repo_root, "docs", "iam-policies")
 
@@ -314,12 +331,12 @@ def create_iam_roles(policy_dir: str | None = None) -> list[str]:
             # Validate it parses as JSON
             json.loads(policy_document)
         except FileNotFoundError:
-            msg = f"  ✗ Policy file not found: {policy_path}"
+            msg = f"  Γ£ù Policy file not found: {policy_path}"
             print(msg, file=sys.stderr)
             errors.append(msg)
             continue
         except json.JSONDecodeError as exc:
-            msg = f"  ✗ Invalid JSON in {policy_path}: {exc}"
+            msg = f"  Γ£ù Invalid JSON in {policy_path}: {exc}"
             print(msg, file=sys.stderr)
             errors.append(msg)
             continue
@@ -335,12 +352,12 @@ def create_iam_roles(policy_dir: str | None = None) -> list[str]:
                     {"Key": "ManagedBy", "Value": "create_infrastructure.py"},
                 ],
             )
-            print(f"  ✓ Role created: {role_name}")
+            print(f"  Γ£ô Role created: {role_name}")
         except ClientError as e:
             if e.response["Error"]["Code"] == "EntityAlreadyExists":
-                print(f"  ✓ Role already exists — skipping creation: {role_name}")
+                print(f"  Γ£ô Role already exists ΓÇö skipping creation: {role_name}")
             else:
-                msg = f"  ✗ Failed to create role {role_name}: {e}"
+                msg = f"  Γ£ù Failed to create role {role_name}: {e}"
                 print(msg, file=sys.stderr)
                 errors.append(msg)
                 continue
@@ -353,9 +370,9 @@ def create_iam_roles(policy_dir: str | None = None) -> list[str]:
                 PolicyName=inline_policy_name,
                 PolicyDocument=policy_document,
             )
-            print(f"    ✓ Inline policy attached: {inline_policy_name}")
+            print(f"    Γ£ô Inline policy attached: {inline_policy_name}")
         except ClientError as e:
-            msg = f"  ✗ Failed to attach policy to {role_name}: {e}"
+            msg = f"  Γ£ù Failed to attach policy to {role_name}: {e}"
             print(msg, file=sys.stderr)
             errors.append(msg)
 
@@ -365,6 +382,95 @@ def create_iam_roles(policy_dir: str | None = None) -> list[str]:
         print(f"\n  Completed with {len(errors)} IAM error(s). See above for details.")
 
     return errors
+
+
+# ---------------------------------------------------------------------------
+# EventBridge Scheduler
+# ---------------------------------------------------------------------------
+
+
+def create_eventbridge_schedules(account_id: str, scheduler_role_arn: str) -> None:
+    """Create EventBridge Scheduler rules for the Editor-in-Chief and Archivist.
+
+    Both rules:
+    - Use Pacific/Auckland timezone
+    - Use FLEXIBLE_TIME_WINDOW Mode=OFF (fire at the exact scheduled time)
+    - Target the respective Lambda function ARN
+    """
+    print(f"\n[6/9] Creating EventBridge Scheduler rules")
+    client = boto3.client("scheduler", region_name=REGION)
+
+    schedules = [
+        {
+            "name": SCHEDULE_EDITOR_IN_CHIEF,
+            "expression": SCHEDULE_EXPR_EDITOR_IN_CHIEF,
+            "lambda_name": LAMBDA_EDITOR_IN_CHIEF,
+            "description": "Editor-in-Chief weekly pipeline — Monday 9am NZT",
+        },
+        {
+            "name": SCHEDULE_ARCHIVIST,
+            "expression": SCHEDULE_EXPR_ARCHIVIST,
+            "lambda_name": LAMBDA_ARCHIVIST,
+            "description": "Archivist (Whakaaro) nightly archive — 11pm NZT",
+        },
+    ]
+
+    for sched in schedules:
+        lambda_arn = (
+            f"arn:aws:lambda:{REGION}:{account_id}:function:{sched['lambda_name']}"
+        )
+        _create_or_update_schedule(
+            client=client,
+            name=sched["name"],
+            schedule_expression=sched["expression"],
+            timezone=SCHEDULE_TIMEZONE,
+            target_arn=lambda_arn,
+            scheduler_role_arn=scheduler_role_arn,
+            description=sched["description"],
+        )
+
+
+def _create_or_update_schedule(
+    client: "boto3.client",
+    name: str,
+    schedule_expression: str,
+    timezone: str,
+    target_arn: str,
+    scheduler_role_arn: str,
+    description: str,
+) -> None:
+    """Create an EventBridge Scheduler schedule, or update it if it already exists."""
+    target = {
+        "Arn": target_arn,
+        "RoleArn": scheduler_role_arn,
+        "Input": '{"source": "scheduled"}',
+    }
+    flexible_time_window = {"Mode": "OFF"}
+
+    try:
+        client.get_schedule(Name=name)
+        client.update_schedule(
+            Name=name,
+            ScheduleExpression=schedule_expression,
+            ScheduleExpressionTimezone=timezone,
+            FlexibleTimeWindow=flexible_time_window,
+            Target=target,
+            Description=description,
+        )
+        print(f"  ✓ Schedule updated: {name}  ({schedule_expression}, {timezone})")
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ResourceNotFoundException":
+            client.create_schedule(
+                Name=name,
+                ScheduleExpression=schedule_expression,
+                ScheduleExpressionTimezone=timezone,
+                FlexibleTimeWindow=flexible_time_window,
+                Target=target,
+                Description=description,
+            )
+            print(f"  ✓ Schedule created: {name}  ({schedule_expression}, {timezone})")
+        else:
+            raise
 
 
 # ---------------------------------------------------------------------------
@@ -401,7 +507,7 @@ def print_secret_instructions() -> None:
 
 def print_lambda_instructions() -> None:
     print("""
-  ── Lambda deployment ──────────────────────────────────────────────────────
+  ΓöÇΓöÇ Lambda deployment ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   Build and deploy:
 
@@ -462,9 +568,9 @@ def print_lambda_instructions() -> None:
 
 def print_eventbridge_instructions() -> None:
     print("""
-  ── EventBridge Scheduler ──────────────────────────────────────────────────
+  ΓöÇΓöÇ EventBridge Scheduler ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
-  Editor-in-Chief — Monday 9am NZT (Pacific/Auckland):
+  Editor-in-Chief ΓÇö Monday 9am NZT (Pacific/Auckland):
 
   aws scheduler create-schedule \\
     --name mce-editor-in-chief-weekly \\
@@ -478,7 +584,7 @@ def print_eventbridge_instructions() -> None:
     }' \\
     --region {region}
 
-  Archivist (Whakaaro) — nightly 11pm NZT:
+  Archivist (Whakaaro) ΓÇö nightly 11pm NZT:
 
   aws scheduler create-schedule \\
     --name mce-archivist-nightly \\
@@ -509,7 +615,7 @@ def print_eventbridge_instructions() -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    print("Magic Content Engine — mce-second-brain Infrastructure Setup")
+    print("Magic Content Engine ΓÇö mce-second-brain Infrastructure Setup")
     print("=" * 60)
     print(f"Region : {REGION}")
     print(f"Bucket : s3://{S3_BUCKET}")
@@ -520,7 +626,7 @@ def main() -> None:
     try:
         create_s3_bucket()
     except Exception as exc:
-        print(f"  ✗ S3 bucket creation failed: {exc}", file=sys.stderr)
+        print(f"  Γ£ù S3 bucket creation failed: {exc}", file=sys.stderr)
         print("  Check your AWS credentials and try again.", file=sys.stderr)
         sys.exit(1)
 
@@ -537,13 +643,29 @@ def main() -> None:
         try:
             fn(ddb)
         except Exception as exc:
-            msg = f"  ✗ {fn.__name__} failed: {exc}"
+            msg = f"  Γ£ù {fn.__name__} failed: {exc}"
             print(msg, file=sys.stderr)
             errors.append(msg)
 
     # IAM roles
     iam_errors = create_iam_roles()
     errors.extend(iam_errors)
+
+    # EventBridge Scheduler
+    try:
+        sts = boto3.client("sts", region_name=REGION)
+        account_id = sts.get_caller_identity()["Account"]
+        scheduler_role_arn = (
+            f"arn:aws:iam::{account_id}:role/eventbridge-scheduler-role"
+        )
+        create_eventbridge_schedules(
+            account_id=account_id,
+            scheduler_role_arn=scheduler_role_arn,
+        )
+    except Exception as exc:
+        msg = f"  ✗ create_eventbridge_schedules failed: {exc}"
+        print(msg, file=sys.stderr)
+        errors.append(msg)
 
     # Printed instructions
     print_secret_instructions()

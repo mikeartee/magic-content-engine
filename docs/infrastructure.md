@@ -149,12 +149,98 @@ The Editor-in-Chief also needs:
 
 ## EventBridge Scheduler Rules
 
-| Rule | Schedule | Timezone | Target |
-|---|---|---|---|
-| `mce-editor-in-chief-weekly` | `cron(0 9 ? * MON *)` | `Pacific/Auckland` | Editor-in-Chief Lambda |
-| `mce-archivist-nightly` | `cron(0 23 * * ? *)` | `Pacific/Auckland` | Archivist (Whakaaro) Lambda |
+Both rules live in **ap-southeast-2** and use `FLEXIBLE_TIME_WINDOW Mode=OFF`,
+meaning they fire at the exact scheduled time with no flexibility window.
 
-Both rules are in ap-southeast-2.
+`create_eventbridge_schedules()` in `scripts/create_infrastructure.py`
+creates (or updates) both rules via boto3. It resolves the AWS account ID
+from STS automatically, so no manual ARN construction is needed.
+
+### mce-editor-in-chief-weekly
+
+Triggers the Editor-in-Chief Lambda every Monday morning NZT so the
+content pipeline starts at the beginning of the working week.
+
+| Property | Value |
+|---|---|
+| Schedule name | `mce-editor-in-chief-weekly` |
+| Schedule expression | `cron(0 9 ? * MON *)` |
+| Timezone | `Pacific/Auckland` |
+| Flexible time window | `OFF` |
+| Target Lambda | `mce-editor-in-chief` |
+| Target ARN format | `arn:aws:lambda:ap-southeast-2:{account_id}:function:mce-editor-in-chief` |
+| Scheduler role | `arn:aws:iam::{account_id}:role/eventbridge-scheduler-role` |
+| Input payload | `{"source": "scheduled"}` |
+
+The cron expression `cron(0 9 ? * MON *)` breaks down as:
+- `0` — minute 0
+- `9` — hour 9
+- `?` — any day-of-month (required placeholder when day-of-week is set)
+- `*` — every month
+- `MON` — Monday only
+- `*` — every year
+
+### mce-archivist-nightly
+
+Triggers the Archivist (Whakaaro) Lambda every night at 11pm NZT,
+independent of the main content pipeline.
+
+| Property | Value |
+|---|---|
+| Schedule name | `mce-archivist-nightly` |
+| Schedule expression | `cron(0 23 * * ? *)` |
+| Timezone | `Pacific/Auckland` |
+| Flexible time window | `OFF` |
+| Target Lambda | `mce-archivist` |
+| Target ARN format | `arn:aws:lambda:ap-southeast-2:{account_id}:function:mce-archivist` |
+| Scheduler role | `arn:aws:iam::{account_id}:role/eventbridge-scheduler-role` |
+| Input payload | `{"source": "scheduled"}` |
+
+The cron expression `cron(0 23 * * ? *)` breaks down as:
+- `0` — minute 0
+- `23` — hour 23 (11pm)
+- `*` — every day-of-month
+- `*` — every month
+- `?` — any day-of-week (required placeholder when day-of-month is set)
+- `*` — every year
+
+### Scheduler IAM role
+
+The `eventbridge-scheduler-role` needs `lambda:InvokeFunction` on both
+target Lambdas. Create it manually in IAM before running the provisioning
+script, or the `create_eventbridge_schedules()` call will fail with an
+`InvalidClientTokenId` or `AccessDenied` error.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "lambda:InvokeFunction",
+      "Resource": [
+        "arn:aws:lambda:ap-southeast-2:*:function:mce-editor-in-chief",
+        "arn:aws:lambda:ap-southeast-2:*:function:mce-archivist"
+      ]
+    }
+  ]
+}
+```
+
+The trust policy must allow `scheduler.amazonaws.com` to assume the role:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": { "Service": "scheduler.amazonaws.com" },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
 
 ---
 
@@ -182,6 +268,11 @@ python scripts/create_infrastructure.py
 ```
 
 The script is idempotent — re-running it skips resources that already
-exist. It creates the S3 bucket and all four DynamoDB tables, then
-prints instructions for Secrets Manager, Lambda deployment, and
-EventBridge Scheduler setup.
+exist. It creates the S3 bucket, all four DynamoDB tables, and both
+EventBridge Scheduler rules, then prints instructions for Secrets
+Manager and Lambda deployment.
+
+The EventBridge step resolves the AWS account ID from STS automatically.
+It requires the `eventbridge-scheduler-role` IAM role to exist before
+running — see the EventBridge Scheduler Rules section above for the
+required trust policy and permissions.
