@@ -52,6 +52,7 @@ class WritingContext:
     screenshots_path: str
     run_date: date
     slug: str
+    vault_context: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -193,11 +194,11 @@ def generate_content(
     model_id = get_model(task_type)
 
     # 3. Build prompt --------------------------------------------------------
-    prompt = _build_prompt(context, steering)
+    prompt = _dispatch_prompt_builder(context, steering)
 
     # 4. Call LLM ------------------------------------------------------------
     try:
-        content = llm(model_id=model_id, prompt=prompt)
+        generated_body = llm(model_id=model_id, prompt=prompt)
     except Exception as exc:
         collector.add(
             StepError(
@@ -208,6 +209,9 @@ def generate_content(
             )
         )
         return None
+
+    # 4b. Assemble final output with structural chrome -----------------------
+    content = _dispatch_assembler(context, generated_body)
 
     # 5. Validate voice rules ------------------------------------------------
     violations = validate_voice_rules(content)
@@ -224,6 +228,12 @@ def generate_content(
 # ---------------------------------------------------------------------------
 # Prompt builder (minimal scaffold — output-specific prompts in 13.4–13.8)
 # ---------------------------------------------------------------------------
+
+
+def _append_vault_context(parts: list[str], vault_context: str | None) -> None:
+    if vault_context is not None:
+        parts.append("\n## Vault context\n")
+        parts.append(vault_context)
 
 
 def build_blog_prompt(context: WritingContext, steering: dict[str, str]) -> str:
@@ -254,7 +264,11 @@ def build_blog_prompt(context: WritingContext, steering: dict[str, str]) -> str:
         c = item.citation
         parts.append(f"- **{a.title}** ({a.source})")
         parts.append(f"  Score: {a.relevance_score}  In-text: {c.in_text_citation}")
-        parts.append(f"  URL: {a.url}\n")
+        parts.append(f"  URL: {a.url}")
+        if a.body:
+            snippet = a.body[:600].replace("\n", " ").strip()
+            parts.append(f"  Content: {snippet}")
+        parts.append("")
 
     # Instructions
     parts.append("\n## Generation instructions\n")
@@ -282,6 +296,7 @@ def build_blog_prompt(context: WritingContext, steering: dict[str, str]) -> str:
     parts.append(f"- Slug: {context.slug}")
     parts.append(f"- Screenshots path: {context.screenshots_path}")
 
+    _append_vault_context(parts, context.vault_context)
     return "\n".join(parts)
 
 
@@ -372,7 +387,11 @@ def build_youtube_prompt(context: WritingContext, steering: dict[str, str]) -> s
         c = item.citation
         parts.append(f"- **{a.title}** ({a.source})")
         parts.append(f"  Score: {a.relevance_score}  In-text: {c.in_text_citation}")
-        parts.append(f"  URL: {a.url}\n")
+        parts.append(f"  URL: {a.url}")
+        if a.body:
+            snippet = a.body[:600].replace("\n", " ").strip()
+            parts.append(f"  Content: {snippet}")
+        parts.append("")
 
     # Instructions
     parts.append("\n## Generation instructions\n")
@@ -397,6 +416,7 @@ def build_youtube_prompt(context: WritingContext, steering: dict[str, str]) -> s
     parts.append(f"- Slug: {context.slug}")
     parts.append(f"- Screenshots path: {context.screenshots_path}")
 
+    _append_vault_context(parts, context.vault_context)
     return "\n".join(parts)
 
 
@@ -416,7 +436,7 @@ def assemble_youtube_script(context: WritingContext, generated_body: str) -> str
     parts: list[str] = []
 
     # --- Title ---
-    parts.append(f"# {context.slug.replace('-', ' ').title()} — YouTube Script\n")
+    parts.append(f"# {context.slug.replace('-', ' ').title()} - YouTube Script\n")
 
     # --- Thumbnail concept ---
     top_title = context.articles[0].article.title if context.articles else "AWS Update"
@@ -505,7 +525,11 @@ def build_cfp_prompt(context: WritingContext, steering: dict[str, str]) -> str:
         c = item.citation
         parts.append(f"- **{a.title}** ({a.source})")
         parts.append(f"  Score: {a.relevance_score}  In-text: {c.in_text_citation}")
-        parts.append(f"  URL: {a.url}\n")
+        parts.append(f"  URL: {a.url}")
+        if a.body:
+            snippet = a.body[:600].replace("\n", " ").strip()
+            parts.append(f"  Content: {snippet}")
+        parts.append("")
 
     # CFP-specific instructions
     parts.append("\n## Generation instructions\n")
@@ -530,6 +554,7 @@ def build_cfp_prompt(context: WritingContext, steering: dict[str, str]) -> str:
     parts.append(f"- Slug: {context.slug}")
     parts.append(f"- Screenshots path: {context.screenshots_path}")
 
+    _append_vault_context(parts, context.vault_context)
     return "\n".join(parts)
 
 
@@ -651,7 +676,11 @@ def build_usergroup_prompt(context: WritingContext, steering: dict[str, str]) ->
         c = item.citation
         parts.append(f"- **{a.title}** ({a.source})")
         parts.append(f"  Score: {a.relevance_score}  In-text: {c.in_text_citation}")
-        parts.append(f"  URL: {a.url}\n")
+        parts.append(f"  URL: {a.url}")
+        if a.body:
+            snippet = a.body[:600].replace("\n", " ").strip()
+            parts.append(f"  Content: {snippet}")
+        parts.append("")
 
     # User-group-specific instructions
     parts.append("\n## Generation instructions\n")
@@ -676,6 +705,7 @@ def build_usergroup_prompt(context: WritingContext, steering: dict[str, str]) ->
     parts.append(f"- Slug: {context.slug}")
     parts.append(f"- Screenshots path: {context.screenshots_path}")
 
+    _append_vault_context(parts, context.vault_context)
     return "\n".join(parts)
 
 
@@ -739,7 +769,7 @@ def assemble_usergroup_session(context: WritingContext, generated_body: str) -> 
     # --- Slide outline (max 12 slides for 30min) ---
     parts.append("## Slide Outline\n")
     slides: list[tuple[str, str]] = [
-        ("Title Slide", f"{context.slug.replace('-', ' ').title()} — User Group Session"),
+        ("Title Slide", f"{context.slug.replace('-', ' ').title()} - User Group Session"),
         ("Agenda", "What we will cover today and key takeaways"),
     ]
 
@@ -757,7 +787,7 @@ def assemble_usergroup_session(context: WritingContext, generated_body: str) -> 
     slides = slides[:12]
 
     for i, (title, description) in enumerate(slides, 1):
-        parts.append(f"{i}. **{title}** — {description}")
+        parts.append(f"{i}. **{title}** - {description}")
     parts.append("")
 
     return "\n".join(parts)
@@ -811,6 +841,7 @@ def build_digest_prompt(context: WritingContext, steering: dict[str, str]) -> st
     parts.append(f"- Run date: {context.run_date.isoformat()}")
     parts.append(f"- Slug: {context.slug}")
 
+    _append_vault_context(parts, context.vault_context)
     return "\n".join(parts)
 
 
@@ -842,6 +873,41 @@ def assemble_digest_email(context: WritingContext, generated_body: str) -> str:
     return "\n".join(parts)
 
 
+def _dispatch_prompt_builder(context: WritingContext, steering: dict[str, str]) -> str:
+    """Route to the correct output-type-specific prompt builder.
+
+    Falls back to the generic ``_build_prompt`` for types without a
+    dedicated builder (cfp, usergroup, digest).
+    """
+    builders = {
+        "blog": build_blog_prompt,
+        "youtube": build_youtube_prompt,
+        "cfp": build_cfp_prompt,
+        "usergroup": build_usergroup_prompt,
+        "digest": build_digest_prompt,
+    }
+    builder = builders.get(context.output_type)
+    if builder is not None:
+        return builder(context, steering)
+    return _build_prompt(context, steering)
+
+
+def _dispatch_assembler(context: WritingContext, generated_body: str) -> str:
+    """Wrap the LLM-generated body with structural chrome.
+
+    For output types without a dedicated assembler the generated body is
+    returned unchanged.
+    """
+    assemblers = {
+        "blog": assemble_blog_post,
+        "youtube": assemble_youtube_script,
+    }
+    assembler = assemblers.get(context.output_type)
+    if assembler is not None:
+        return assembler(context, generated_body)
+    return generated_body
+
+
 def _build_prompt(context: WritingContext, steering: dict[str, str]) -> str:
     """Assemble the LLM prompt from steering files and article context.
 
@@ -866,7 +932,11 @@ def _build_prompt(context: WritingContext, steering: dict[str, str]) -> str:
         c = item.citation
         parts.append(f"- **{a.title}** ({a.source})")
         parts.append(f"  Score: {a.relevance_score}  Citation: {c.in_text_citation}")
-        parts.append(f"  URL: {a.url}\n")
+        parts.append(f"  URL: {a.url}")
+        if a.body:
+            snippet = a.body[:600].replace("\n", " ").strip()
+            parts.append(f"  Content: {snippet}")
+        parts.append("")
 
     # Run metadata
     parts.append(f"\n## Run metadata\n")

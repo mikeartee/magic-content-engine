@@ -32,6 +32,7 @@ class Article:
     relevance_score: Optional[int] = None  # 1-5, assigned by Haiku
     scoring_rationale: Optional[str] = None
     status: str = "discovered"  # discovered | scored | excluded | confirmed | previously_covered
+    body: str = ""  # fetched article body text, populated after scoring
 
 
 @dataclass

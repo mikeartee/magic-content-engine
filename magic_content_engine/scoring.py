@@ -91,8 +91,13 @@ def _parse_score_response(raw: str) -> tuple[int, str]:
     Raises ``ValueError`` when the response cannot be parsed or the
     score is outside the valid 1-5 range.
     """
+    # Strip markdown code fences that some models emit despite instructions
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.split("\n", 1)[-1]  # drop the ```json line
+        cleaned = cleaned.rsplit("```", 1)[0]  # drop the closing ```
     try:
-        data = json.loads(raw.strip())
+        data = json.loads(cleaned.strip())
     except json.JSONDecodeError as exc:
         raise ValueError(f"LLM response is not valid JSON: {raw!r}") from exc
 

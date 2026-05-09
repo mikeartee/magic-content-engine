@@ -169,6 +169,21 @@ output/2026-03-16-agentcore-memory-launch/
     sample-output.png
 ```
 
+## S3 Key Format
+
+The engine uploads files to S3 using this key pattern:
+
+```
+output/{YYYY-MM-DD}-{slug}/post.md
+```
+
+- `{YYYY-MM-DD}` is the run date, always exactly 10 characters (ISO 8601 via `date.isoformat()`)
+- `{slug}` is a kebab-case string derived from the topic, matching `^[a-z0-9]+(-[a-z0-9]+)*$`
+- If the topic produces an empty slug after normalisation, the fallback value is `content`
+
+The `S3_KEY_PREFIX` environment variable controls the root prefix. It must be set to `output/` for the mikefromnz admin importer to discover files. The importer hardcodes `Prefix: 'output/'` in its S3 list call, so any other value will silently break discovery.
+
+The importer parses the dir-name segment using fixed-offset slicing: `slice(0, 10)` extracts the date, `slice(11)` extracts the slug. This only works correctly when the date segment is exactly 10 characters and the separator between date and slug is a single `-` at position 10. The engine's use of `date.isoformat()` guarantees both conditions today.
 
 ## Publish Gate
 

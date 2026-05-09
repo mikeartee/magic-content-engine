@@ -29,3 +29,28 @@ output/
 # Coverage
 htmlcov/
 .coverage
+
+# Hypothesis
+.hypothesis/
+
+# Lambda build artifacts
+lambda_package/
+package/
+*.zip
+lambda-policy.json
+scheduler-policy.json
+scheduler-trust.json
+trust-policy.json
+requirements-lambda.txt
+lambda_handler.py
+payload.json
+response.json
+target.json
+
+# Output bundles
+2026-*/
+post.md
+script.md
+
+# tdd-parallel worktrees
+.worktrees/
