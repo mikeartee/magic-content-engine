@@ -51,3 +51,6 @@ target.json
 2026-*/
 post.md
 script.md
+
+# tdd-parallel worktrees
+.worktrees/
