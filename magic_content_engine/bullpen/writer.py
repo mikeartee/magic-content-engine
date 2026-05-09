@@ -124,6 +124,37 @@ def _count_words(text: str) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _strip_llm_artifacts(body: str) -> str:
+    """Remove artifacts the LLM sometimes adds despite being told not to.
+
+    Strips:
+    - MIKE placeholder comments (added by assembler, not LLM)
+    - Markdown code fences wrapping the entire body
+    - Trailing References sections (added by assembler)
+    - Em-dashes (replace with plain hyphen)
+    """
+    import re
+
+    # Remove any <!-- MIKE: ... --> blocks (single or multiline)
+    body = re.sub(r'<!--\s*MIKE:.*?-->', '', body, flags=re.DOTALL)
+
+    # Remove opening/closing markdown code fences that wrap the whole body
+    # Pattern: ```markdown or ``` at start of line
+    body = re.sub(r'^```[a-z]*\s*\n', '', body, flags=re.MULTILINE)
+    body = re.sub(r'\n```\s*$', '', body, flags=re.MULTILINE)
+
+    # Remove any trailing ## References section (assembler adds its own)
+    body = re.sub(r'\n## References\b.*$', '', body, flags=re.DOTALL)
+
+    # Replace em-dashes with plain hyphens
+    body = body.replace('\u2014', ' - ').replace('&#8212;', ' - ')
+
+    # Clean up excessive blank lines left by removals
+    body = re.sub(r'\n{3,}', '\n\n', body)
+
+    return body.strip()
+
+
 def _generate_blog(
     context: WritingContext,
     steering: dict[str, str],
@@ -135,6 +166,7 @@ def _generate_blog(
     if revision_feedback:
         prompt = _inject_revision_feedback(prompt, revision_feedback)
     body = llm(model_id=_model_for("blog"), prompt=prompt)
+    body = _strip_llm_artifacts(body)
     return assemble_blog_post(context, body)
 
 
@@ -149,6 +181,7 @@ def _generate_youtube(
     if revision_feedback:
         prompt = _inject_revision_feedback(prompt, revision_feedback)
     body = llm(model_id=_model_for("youtube"), prompt=prompt)
+    body = _strip_llm_artifacts(body)
     script = assemble_youtube_script(context, body)
     description = assemble_youtube_description(context)
     return script, description
@@ -165,6 +198,7 @@ def _generate_cfp(
     if revision_feedback:
         prompt = _inject_revision_feedback(prompt, revision_feedback)
     body = llm(model_id=_model_for("cfp"), prompt=prompt)
+    body = _strip_llm_artifacts(body)
     return assemble_cfp_proposal(context, body)
 
 
@@ -179,6 +213,7 @@ def _generate_usergroup(
     if revision_feedback:
         prompt = _inject_revision_feedback(prompt, revision_feedback)
     body = llm(model_id=_model_for("usergroup"), prompt=prompt)
+    body = _strip_llm_artifacts(body)
     return assemble_usergroup_session(context, body)
 
 
