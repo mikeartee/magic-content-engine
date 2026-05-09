@@ -527,11 +527,11 @@ def main(argv: list[str] | None = None) -> None:
             return RB(
                 articles=[
                     ScoredArticle(
-                        title="[DRY RUN] Kiro IDE test article",
+                        title="Kiro IDE changelog update",
                         url="https://kiro.dev/changelog/ide/",
                         source="kiro.dev/changelog/ide/",
                         relevance_score=5,
-                        summary="Dry run stub article for testing the pipeline.",
+                        summary="Kiro IDE released new features including improved spec workflow, hooks, and steering file support for AI-assisted development.",
                     )
                 ],
                 sources_crawled=["kiro.dev/changelog/ide/"],
