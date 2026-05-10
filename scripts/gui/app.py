@@ -7,6 +7,7 @@ All API endpoints and the Flask app instance live here.
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 import threading
 import uuid
@@ -265,12 +266,82 @@ def download_file(run_id: str, filename: str):
 
 
 # ---------------------------------------------------------------------------
-# DynamoDB suggestions
+# Vault-based suggestions
 # ---------------------------------------------------------------------------
+
+_VAULT_ROOT = Path(r"C:\Users\Mike RT\Documents\second-brain")
+
+
+def _extract_vault_suggestions() -> list[dict]:
+    """Pull content suggestions from the vault.
+
+    Priority order:
+    1. Permanent notes (06-permanent) — atomic ideas ready to write about
+    2. Inbox notes (00-inbox) — recent captures
+    3. Project notes (01-projects) — active project context
+    """
+    suggestions = []
+    seen_topics = set()
+
+    def _add(topic: str, source_path: Path, mtime_date: date):
+        if topic.lower() in seen_topics or len(topic) < 5:
+            return
+        seen_topics.add(topic.lower())
+        days_since = (date.today() - mtime_date).days
+        suggestions.append({
+            "topic": topic,
+            "last_covered": mtime_date.isoformat(),
+            "days_since": days_since,
+            "source": str(source_path.relative_to(_VAULT_ROOT)),
+        })
+
+    # 1. Permanent notes — use filename as topic (strip leading ID if present)
+    permanent_dir = _VAULT_ROOT / "06-permanent"
+    if permanent_dir.is_dir():
+        for md_file in sorted(permanent_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
+            stem = md_file.stem
+            # Strip leading numeric ID like "202604050001 "
+            stem = re.sub(r'^\d{8,}\s+', '', stem)
+            mtime = date.fromtimestamp(md_file.stat().st_mtime)
+            _add(stem, md_file, mtime)
+            if len(suggestions) >= 10:
+                return suggestions
+
+    # 2. Inbox notes
+    inbox_dir = _VAULT_ROOT / "00-inbox"
+    if inbox_dir.is_dir():
+        for md_file in sorted(inbox_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
+            try:
+                text = md_file.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            topic = None
+            for line in text.splitlines():
+                line = line.strip()
+                if line.startswith("# "):
+                    topic = line[2:].strip()
+                    break
+            if not topic:
+                topic = md_file.stem.replace("-", " ")
+            mtime = date.fromtimestamp(md_file.stat().st_mtime)
+            _add(topic, md_file, mtime)
+            if len(suggestions) >= 10:
+                return suggestions
+
+    return suggestions
 
 
 @app.route("/api/suggestions")
 def get_suggestions():
+    # Try vault first
+    try:
+        if _VAULT_ROOT.is_dir():
+            suggestions = _extract_vault_suggestions()
+            return jsonify({"suggestions": suggestions})
+    except Exception as exc:
+        pass  # fall through to DynamoDB
+
+    # Fall back to DynamoDB topic coverage table
     try:
         dynamodb = boto3.resource("dynamodb", region_name=_aws_region())
         table = dynamodb.Table("mce-topic-coverage")
