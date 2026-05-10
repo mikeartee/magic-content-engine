@@ -62,11 +62,15 @@ def _tail_log(log_path: Path, run_state: Any) -> Generator[str, None, None]:
 def tail_log(run_state: Any) -> Generator[str, None, None]:
     """Return the ``_tail_log`` generator for *run_state*.
 
-    The log path is resolved relative to the repo root (parent of
-    ``scripts/``), which is two levels above this file.
+    Uses ``run_state.log_path`` if set (per-run log), otherwise falls back
+    to the legacy ``output/agent-log.jsonl`` path.
     """
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    log_path = repo_root / "output" / "agent-log.jsonl"
+    log_path = getattr(run_state, "log_path", None)
+    if log_path is None:
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        log_path = repo_root / "output" / "agent-log.jsonl"
+    else:
+        log_path = Path(log_path)
 
     # Ensure the file exists so the tailer can open it immediately.
     log_path.parent.mkdir(parents=True, exist_ok=True)
