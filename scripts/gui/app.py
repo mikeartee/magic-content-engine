@@ -269,7 +269,7 @@ def download_file(run_id: str, filename: str):
 # Vault-based suggestions
 # ---------------------------------------------------------------------------
 
-_VAULT_ROOT = Path(r"C:\Users\Mike RT\Documents\second-brain")
+_VAULT_ROOT = Path(os.environ.get("VAULT_PATH", r"C:\Users\Mike RT\Documents\second-brain"))
 
 
 def _extract_vault_suggestions() -> list[dict]:
