@@ -43,6 +43,15 @@ body {
   border-bottom: 1px solid #2e2e4e;
   margin-bottom: 8px;
   letter-spacing: 0.03em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nav-logo {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
 }
 
 .nav-btn {

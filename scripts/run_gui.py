@@ -34,18 +34,49 @@ if str(_REPO_ROOT) not in sys.path:
 
 
 def _make_icon():
-    from PIL import Image, ImageDraw
-    img = Image.new("RGBA", (64, 64), color=(0, 0, 0, 0))
+    """Bullpen logo — blue circle with a white bull silhouette and drop shadow."""
+    from PIL import Image, ImageDraw, ImageFilter
+
+    size = 128
+    img = Image.new("RGBA", (size, size), color=(0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    # Filled circle background
-    draw.ellipse([2, 2, 62, 62], fill=(26, 26, 46))
-    # Simple "B" letterform
-    draw.rectangle([14, 12, 22, 52], fill=(77, 159, 255))
-    draw.rectangle([22, 12, 42, 22], fill=(77, 159, 255))
-    draw.rectangle([22, 30, 40, 34], fill=(77, 159, 255))
-    draw.rectangle([22, 42, 42, 52], fill=(77, 159, 255))
-    draw.ellipse([36, 12, 48, 34], fill=(77, 159, 255))
-    draw.ellipse([36, 32, 48, 52], fill=(77, 159, 255))
+
+    # Blue circle background
+    blue = (26, 77, 204, 255)
+    draw.ellipse([2, 2, size - 2, size - 2], fill=blue)
+
+    # Bull silhouette on a separate layer so we can drop-shadow it
+    bull_layer = Image.new("RGBA", (size, size), color=(0, 0, 0, 0))
+    bull = ImageDraw.Draw(bull_layer)
+    white = (255, 255, 255, 255)
+
+    # Horns (triangles)
+    bull.polygon([(32, 52), (45, 44), (54, 60)], fill=white)
+    bull.polygon([(96, 52), (83, 44), (74, 60)], fill=white)
+    # Head
+    bull.ellipse([37, 48, 91, 90], fill=white)
+    # Muzzle
+    bull.ellipse([48, 74, 80, 104], fill=white)
+    # Eyes and nostrils (blue, to punch back through)
+    bull.ellipse([50, 64, 58, 72], fill=blue)
+    bull.ellipse([70, 64, 78, 72], fill=blue)
+    bull.ellipse([56, 86, 62, 94], fill=blue)
+    bull.ellipse([66, 86, 72, 94], fill=blue)
+
+    # Build drop shadow: solid black silhouette, offset, blurred
+    alpha = bull_layer.split()[3]
+    shadow = Image.new("RGBA", (size, size), color=(0, 0, 0, 0))
+    black = Image.new("RGBA", (size, size), color=(0, 0, 0, 140))
+    shadow.paste(black, (4, 4), alpha)
+    shadow = shadow.filter(ImageFilter.GaussianBlur(radius=3))
+
+    # Composite: circle, shadow (clipped to circle), bull, clipped to circle
+    mask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(mask).ellipse([2, 2, size - 2, size - 2], fill=255)
+
+    img.paste(shadow, (0, 0), Image.composite(shadow.split()[3], Image.new("L", (size, size), 0), mask))
+    img.paste(bull_layer, (0, 0), Image.composite(bull_layer.split()[3], Image.new("L", (size, size), 0), mask))
+
     return img
 
 
