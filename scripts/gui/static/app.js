@@ -312,6 +312,7 @@ function handlePipelineEvent(event) {
       showVerdict(event.details);
       break;
     case 'approval_gate_presented':
+    case 'file_escalated':
       showApprovalButtons();
       break;
     case 'pipeline_complete':
