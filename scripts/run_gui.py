@@ -3,10 +3,9 @@
 Bullpen Web GUI — entry point with system tray icon.
 
 Usage:
-    python scripts/run_gui.py
+    Double-click bullpen.bat
 
-Double-click bullpen.bat to launch. A tray icon appears in the system tray.
-Right-click it to open the browser or quit.
+A tray icon appears in the system tray. Right-click to open browser or quit.
 
 Environment variables:
     GUI_PORT            Port to listen on (default: 5000)
@@ -21,7 +20,6 @@ import threading
 import webbrowser
 from pathlib import Path
 
-# Load .env from the repo root before importing the app
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _ENV_FILE = _REPO_ROOT / ".env"
 
@@ -36,63 +34,34 @@ if str(_REPO_ROOT) not in sys.path:
 
 
 def _make_icon():
-    """Create a simple coloured square as the tray icon."""
     from PIL import Image, ImageDraw
-    img = Image.new("RGB", (64, 64), color=(26, 26, 46))  # dark navy
+    img = Image.new("RGBA", (64, 64), color=(0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    # Draw a simple "B" shape using rectangles
-    draw.rectangle([12, 10, 20, 54], fill=(77, 159, 255))   # vertical bar
-    draw.rectangle([20, 10, 40, 22], fill=(77, 159, 255))   # top arm
-    draw.rectangle([20, 30, 38, 42], fill=(77, 159, 255))   # middle arm
-    draw.rectangle([20, 42, 40, 54], fill=(77, 159, 255))   # bottom arm
-    draw.rectangle([40, 10, 44, 32], fill=(77, 159, 255))   # top curve
-    draw.rectangle([38, 42, 44, 54], fill=(77, 159, 255))   # bottom curve
+    # Filled circle background
+    draw.ellipse([2, 2, 62, 62], fill=(26, 26, 46))
+    # Simple "B" letterform
+    draw.rectangle([14, 12, 22, 52], fill=(77, 159, 255))
+    draw.rectangle([22, 12, 42, 22], fill=(77, 159, 255))
+    draw.rectangle([22, 30, 40, 34], fill=(77, 159, 255))
+    draw.rectangle([22, 42, 42, 52], fill=(77, 159, 255))
+    draw.ellipse([36, 12, 48, 34], fill=(77, 159, 255))
+    draw.ellipse([36, 32, 48, 52], fill=(77, 159, 255))
     return img
-
-
-def _run_flask(port: int, stop_event: threading.Event) -> None:
-    """Run Flask in a background thread."""
-    from scripts.gui.app import app
-    import logging
-    log = logging.getLogger("werkzeug")
-    log.setLevel(logging.WARNING)  # suppress per-request logs when using tray
-
-    try:
-        app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False)
-    except OSError as exc:
-        if "address already in use" in str(exc).lower() or getattr(exc, "errno", None) in (98, 10048):
-            print(f"ERROR: Port {port} is already in use. Set GUI_PORT to a different port.", file=sys.stderr)
-        stop_event.set()
 
 
 def main() -> None:
     port = int(os.environ.get("GUI_PORT", "5000"))
     url = f"http://127.0.0.1:{port}"
 
-    stop_event = threading.Event()
+    # Import Flask app
+    from scripts.gui.app import app
+    import logging
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
-    # Start Flask in background thread
-    flask_thread = threading.Thread(target=_run_flask, args=(port, stop_event), daemon=True)
-    flask_thread.start()
-
-    # Wait briefly for Flask to start, then open browser
-    import time
-    for _ in range(20):
-        time.sleep(0.25)
-        try:
-            import urllib.request
-            urllib.request.urlopen(f"{url}/api/health", timeout=1)
-            break
-        except Exception:
-            continue
-
-    webbrowser.open(url)
-
-    # Build tray icon
+    # Try to set up tray icon
+    tray_icon = None
     try:
         import pystray
-
-        icon_image = _make_icon()
 
         def on_open(icon, item):
             webbrowser.open(url)
@@ -107,25 +76,48 @@ def main() -> None:
             pystray.MenuItem("Quit", on_quit),
         )
 
-        icon = pystray.Icon(
+        tray_icon = pystray.Icon(
             name="bullpen",
-            icon=icon_image,
-            title="Bullpen — Magic Content Engine",
+            icon=_make_icon(),
+            title="Bullpen",
             menu=menu,
         )
 
-        print(f"Bullpen running at {url}")
-        print("Right-click the tray icon to open or quit.")
-        icon.run()  # blocks until quit
+        # Run tray icon in its own thread
+        tray_thread = threading.Thread(target=tray_icon.run, daemon=True)
+        tray_thread.start()
 
-    except ImportError:
-        # pystray not available — fall back to blocking on the Flask thread
-        print(f"Bullpen running at {url}")
+    except Exception as e:
+        print(f"Tray icon unavailable: {e}", file=sys.stderr)
+
+    # Open browser once Flask is ready (in background thread)
+    def _open_browser():
+        import time, urllib.request
+        for _ in range(40):
+            time.sleep(0.25)
+            try:
+                urllib.request.urlopen(f"{url}/api/health", timeout=1)
+                webbrowser.open(url)
+                return
+            except Exception:
+                continue
+
+    threading.Thread(target=_open_browser, daemon=True).start()
+
+    print(f"Bullpen starting at {url}")
+    if tray_icon:
+        print("Tray icon active — right-click to open or quit.")
+    else:
         print("Press Ctrl+C to stop.")
-        try:
-            flask_thread.join()
-        except KeyboardInterrupt:
-            pass
+
+    # Run Flask on the main thread
+    try:
+        app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False)
+    except OSError as exc:
+        if "address already in use" in str(exc).lower() or getattr(exc, "errno", None) in (98, 10048):
+            print(f"ERROR: Port {port} is already in use.", file=sys.stderr)
+            sys.exit(1)
+        raise
 
 
 if __name__ == "__main__":
