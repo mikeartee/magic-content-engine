@@ -512,3 +512,72 @@ def test_devto_publish_missing_api_key(client, monkeypatch):
     )
     assert response.status_code == 400
     assert response.get_json()["error"] == "missing_api_key"
+
+
+# ---------------------------------------------------------------------------
+# 13.3 — Unit test: MIKE placeholder detection
+# ---------------------------------------------------------------------------
+
+import re
+
+
+class TestMikePlaceholderDetection:
+    """Unit tests for MIKE placeholder detection (Python equivalent of the JS regex)."""
+
+    MIKE_PATTERN = re.compile(r'<!--\s*MIKE:\s*\[([^\]]+)\]\s*-->')
+
+    def test_detects_single_placeholder(self):
+        text = '# Title\n\n<!-- MIKE: [write your hook, ~50 words] -->\n\nBody text.'
+        matches = self.MIKE_PATTERN.findall(text)
+        assert len(matches) == 1
+        assert 'write your hook' in matches[0]
+
+    def test_detects_multiple_placeholders(self):
+        text = '<!-- MIKE: [hook, ~30 words] -->\n\nContent\n\n<!-- MIKE: [closing, ~40 words] -->'
+        matches = self.MIKE_PATTERN.findall(text)
+        assert len(matches) == 2
+
+    def test_no_false_positives(self):
+        text = '# Normal heading\n\nRegular content without placeholders.'
+        matches = self.MIKE_PATTERN.findall(text)
+        assert len(matches) == 0
+
+    def test_replacement_removes_placeholder(self):
+        text = 'Before\n<!-- MIKE: [instruction, ~50 words] -->\nAfter'
+        result = self.MIKE_PATTERN.sub('User wrote this.', text)
+        assert '<!-- MIKE:' not in result
+        assert 'User wrote this.' in result
+
+
+# ---------------------------------------------------------------------------
+# 13.4 — Property test: MIKE placeholder preservation
+# ---------------------------------------------------------------------------
+
+
+class TestMikePlaceholderPreservation:
+    """Property: replacing all MIKE placeholders with user text leaves no MIKE patterns."""
+
+    MIKE_PATTERN = re.compile(r'<!--\s*MIKE:\s*\[([^\]]+)\]\s*-->')
+
+    @given(
+        base_text=st.text(min_size=0, max_size=500).filter(lambda t: '<!-- MIKE:' not in t),
+        user_texts=st.lists(st.text(min_size=1, max_size=200), min_size=0, max_size=5)
+    )
+    @settings(max_examples=100)
+    def test_no_mike_patterns_after_replacement(self, base_text, user_texts):
+        """After replacing all MIKE placeholders with user text, no MIKE patterns remain."""
+        # Build a text with N placeholders
+        placeholders = [f'<!-- MIKE: [instruction {i}, ~50 words] -->' for i in range(len(user_texts))]
+        text = base_text
+        for p in placeholders:
+            text = text + '\n' + p
+
+        # Replace each placeholder with corresponding user text.
+        # Use a callable replacement to avoid re.sub interpreting backslashes
+        # in user_text as regex escape sequences (e.g. \2, \n).
+        result = text
+        for user_text in user_texts:
+            result = self.MIKE_PATTERN.sub(lambda _m, t=user_text: t, result, count=1)
+
+        # No MIKE patterns should remain
+        assert '<!-- MIKE:' not in result
