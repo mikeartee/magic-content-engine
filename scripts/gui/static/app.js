@@ -78,7 +78,6 @@ function showPublishStatus(msg, cls) {
  * Panels are identified by their data-panel attribute.
  */
 function showPanel(name) {
-  console.log('[DEBUG-a4f2] showPanel called with:', name, 'from:', new Error().stack.split('\n')[2]);
   document.querySelectorAll('[data-panel]').forEach(section => {
     section.classList.toggle('active', section.dataset.panel === name);
   });
@@ -270,6 +269,19 @@ function showApprovalButtons() {
   // Don't force a panel switch — user might be on Progress watching events
 }
 
+function showEscalated() {
+  // Pipeline hit max revisions without a clean publish verdict.
+  // No approval gate on server — user must edit and publish manually.
+  markAgentActive('approval_gate');
+  document.getElementById('approval-actions').classList.add('hidden');
+  const verdictArea = document.getElementById('verdict-area');
+  verdictArea.innerHTML += `<p><strong>Escalated — review and publish manually.</strong> Max revisions reached. Edit in Review panel, then use Publish panel.</p>`;
+  if (currentRunId && !reviewAutoLoaded) {
+    reviewAutoLoaded = true;
+    loadRunFiles(currentRunId);
+  }
+}
+
 /**
  * Handle the pipeline completing (success, halted, or error).
  */
@@ -326,8 +338,10 @@ function handlePipelineEvent(event) {
       showVerdict(event.details);
       break;
     case 'approval_gate_presented':
-    case 'file_escalated':
       showApprovalButtons();
+      break;
+    case 'file_escalated':
+      showEscalated();
       break;
     case 'pipeline_complete':
       onPipelineComplete(event);
