@@ -117,12 +117,16 @@ def start_run():
         run_id = uuid.uuid4().hex[:8]
         brief = BullpenBrief(topic=topic, requested_outputs=list(outputs))
 
+        # Build the output directory for this run and ensure it exists
+        run_output_dir = _OUTPUT_DIR / run_id
+        run_output_dir.mkdir(parents=True, exist_ok=True)
+
         _run_state.in_progress = True
         _run_state.run_id = run_id
         _run_state.approval_event = None
         _run_state.approval_result = None
-        _run_state.log_path = None
-        _run_state.output_dir = None
+        _run_state.log_path = run_output_dir / "agent-log.jsonl"
+        _run_state.output_dir = str(run_output_dir)
 
     t = threading.Thread(
         target=pipeline_runner.run_pipeline_thread,
