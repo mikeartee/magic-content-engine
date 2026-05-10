@@ -18,6 +18,9 @@ let currentRawMarkdown = '';
 /** The filename currently displayed in the Review Panel. */
 let currentFileName = '';
 
+/** When true, no SSE event is allowed to overwrite the Review panel content. */
+let reviewPanelLocked = false;
+
 // ============================================================
 // Utility functions
 // ============================================================
@@ -172,6 +175,8 @@ function resetProgressView() {
   document.getElementById('approval-actions').classList.add('hidden');
   document.getElementById('approve-btn').disabled = false;
   document.getElementById('reject-btn').disabled = false;
+  // New run — allow the Review panel to be populated again
+  reviewPanelLocked = false;
 }
 
 /**
@@ -256,10 +261,8 @@ function showVerdict(details) {
 function showApprovalButtons() {
   markAgentActive('approval_gate');
   document.getElementById('approval-actions').classList.remove('hidden');
-  // Load the current run's files into the Review panel (unless user is already editing)
-  const contentArea = document.getElementById('content-area');
-  const hasEditor = contentArea && contentArea.querySelector('#article-editor');
-  if (currentRunId && !hasEditor) {
+  // Load the current run's files into the Review panel (unless it's already loaded)
+  if (currentRunId && !reviewPanelLocked) {
     loadRunFiles(currentRunId);
   }
   showPanel('review');
@@ -288,10 +291,8 @@ function onPipelineComplete(event) {
   // Refresh run history once
   loadRunHistory();
 
-  // Only auto-load files if the Review panel is empty — don't clobber active edits
-  const contentArea = document.getElementById('content-area');
-  const hasEditor = contentArea && contentArea.querySelector('#article-editor');
-  if (currentRunId && !hasEditor) {
+  // Only auto-load files if the Review panel isn't locked
+  if (currentRunId && !reviewPanelLocked) {
     loadRunFiles(currentRunId);
   }
 }
@@ -578,6 +579,9 @@ async function loadFileContent(runId, filename) {
  */
 function renderFileContent(text, filename) {
   const contentArea = document.getElementById('content-area');
+
+  // Lock the panel — no SSE event should replace this content now
+  reviewPanelLocked = true;
 
   // Build the editor: textarea + Save button
   contentArea.innerHTML = '';
