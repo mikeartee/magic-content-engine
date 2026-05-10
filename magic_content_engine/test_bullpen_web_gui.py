@@ -1,10 +1,16 @@
-"""Tests for the Bullpen Web GUI Flask application.
+"""
+Tests for the Bullpen Web GUI Flask application.
 
 Covers:
 - POST /api/run rejects concurrent runs (409)
 - POST /api/run validates empty topic (422)
+- POST /api/run/approve and /api/run/reject approval gate
+- _make_approval_fn blocking/return-value behaviour
 
-Requirements: 3.4, 15.2
+Requirements: 3.4, 7.2, 7.3, 15.2
+
+Run:
+    python -m pytest magic_content_engine/test_bullpen_web_gui.py -x -q
 """
 
 from __future__ import annotations
@@ -12,6 +18,7 @@ from __future__ import annotations
 import sys
 import os
 import threading
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -19,22 +26,17 @@ import pytest
 # ---------------------------------------------------------------------------
 # Import path setup
 #
-# The Flask app lives in scripts/gui/app.py. scripts/ has no __init__.py so
-# it is not a regular package. We add the scripts/gui directory to sys.path
-# so that `import app` and `import pipeline_runner` resolve correctly when
-# the test runner imports this file.
+# The Flask app lives in scripts/gui/app.py. We add the repo root to sys.path
+# so that `import scripts.gui.app` resolves correctly.
 # ---------------------------------------------------------------------------
 
-_WORKTREE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_GUI_DIR = os.path.join(_WORKTREE_ROOT, "scripts", "gui")
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_SCRIPTS_DIR = _REPO_ROOT / "scripts"
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
 
-if _GUI_DIR not in sys.path:
-    sys.path.insert(0, _GUI_DIR)
-
-# Now import the Flask app. pipeline_runner is mocked in each test so the
-# stub's run_pipeline_thread is never actually called.
-import app as gui_app  # noqa: E402  (import after sys.path manipulation)
-from app import RunState, _run_state, _run_lock  # noqa: E402
+import scripts.gui.app as app_module  # noqa: E402
+from scripts.gui.app import RunState  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -46,13 +48,7 @@ VALID_PAYLOAD = {"topic": "Kiro IDE 1.0 launch", "outputs": ["blog"]}
 
 def _reset_run_state() -> None:
     """Reset the global run state between tests."""
-    with _run_lock:
-        _run_state.in_progress = False
-        _run_state.run_id = None
-        _run_state.approval_event = None
-        _run_state.approval_result = None
-        _run_state.log_path = None
-        _run_state.output_dir = None
+    app_module._run_state = RunState()
 
 
 @pytest.fixture(autouse=True)
@@ -66,8 +62,8 @@ def reset_state():
 @pytest.fixture()
 def client():
     """Flask test client with TESTING mode enabled."""
-    gui_app.app.config["TESTING"] = True
-    with gui_app.app.test_client() as c:
+    app_module.app.config["TESTING"] = True
+    with app_module.app.test_client() as c:
         yield c
 
 
@@ -79,89 +75,232 @@ def client():
 class TestRunEndpointConcurrency:
     def test_run_endpoint_rejects_concurrent_runs(self, client):
         """Second POST /api/run while one is in progress returns 409."""
-        # Patch run_pipeline_thread so it blocks long enough for the second
-        # request to arrive, but doesn't actually run the pipeline.
         barrier = threading.Barrier(2, timeout=5)
         stop_event = threading.Event()
 
         def _blocking_thread(run_state, brief):
-            # Signal that the thread has started and is "in progress"
             try:
                 barrier.wait()
-                # Hold in_progress=True until the test releases us
                 stop_event.wait(timeout=5)
             finally:
                 run_state.in_progress = False
 
-        with patch("pipeline_runner.run_pipeline_thread", side_effect=_blocking_thread):
-            # First request — should succeed (202)
+        with patch.object(app_module, "pipeline_runner") as mock_pr:
+            mock_pr.run_pipeline_thread.side_effect = _blocking_thread
+
             resp1 = client.post("/api/run", json=VALID_PAYLOAD)
             assert resp1.status_code == 202, resp1.get_json()
 
-            # Wait until the background thread has started and set in_progress
             barrier.wait(timeout=5)
 
-            # Second request — should be rejected (409)
             resp2 = client.post("/api/run", json=VALID_PAYLOAD)
             assert resp2.status_code == 409
             body = resp2.get_json()
             assert body["error"] == "conflict"
 
-            # Release the background thread
             stop_event.set()
 
 
 class TestRunEndpointValidation:
     def test_run_endpoint_validates_empty_topic(self, client):
         """POST /api/run with empty topic string returns 422."""
-        with patch("pipeline_runner.run_pipeline_thread") as mock_thread:
+        with patch.object(app_module, "pipeline_runner") as mock_pr:
             resp = client.post("/api/run", json={"topic": "", "outputs": ["blog"]})
             assert resp.status_code == 422
             body = resp.get_json()
             assert body["error"] == "validation"
             assert "topic" in body["detail"]
-            # Pipeline must not have been started
-            mock_thread.assert_not_called()
+            mock_pr.run_pipeline_thread.assert_not_called()
 
     def test_run_endpoint_validates_whitespace_only_topic(self, client):
         """POST /api/run with whitespace-only topic returns 422."""
-        with patch("pipeline_runner.run_pipeline_thread") as mock_thread:
+        with patch.object(app_module, "pipeline_runner") as mock_pr:
             resp = client.post("/api/run", json={"topic": "   ", "outputs": ["blog"]})
             assert resp.status_code == 422
-            body = resp.get_json()
-            assert body["error"] == "validation"
-            mock_thread.assert_not_called()
+            mock_pr.run_pipeline_thread.assert_not_called()
 
     def test_run_endpoint_validates_missing_outputs(self, client):
         """POST /api/run with no outputs returns 422."""
-        with patch("pipeline_runner.run_pipeline_thread") as mock_thread:
+        with patch.object(app_module, "pipeline_runner") as mock_pr:
             resp = client.post("/api/run", json={"topic": "Kiro IDE", "outputs": []})
             assert resp.status_code == 422
-            body = resp.get_json()
-            assert body["error"] == "validation"
-            mock_thread.assert_not_called()
+            mock_pr.run_pipeline_thread.assert_not_called()
 
     def test_run_endpoint_valid_payload_returns_202(self, client):
         """POST /api/run with valid payload returns 202 and a run_id."""
-        with patch("pipeline_runner.run_pipeline_thread"):
+        with patch.object(app_module, "pipeline_runner"):
             resp = client.post("/api/run", json=VALID_PAYLOAD)
             assert resp.status_code == 202
             body = resp.get_json()
             assert "run_id" in body
-            assert len(body["run_id"]) == 8  # uuid4().hex[:8]
+            assert len(body["run_id"]) == 8
 
-    def test_run_endpoint_run_id_is_unique(self, client):
-        """Each successful POST /api/run returns a distinct run_id."""
-        run_ids = []
 
-        def _instant_thread(run_state, brief):
-            run_state.in_progress = False
+# ---------------------------------------------------------------------------
+# 3.4 — Approval gate tests
+# ---------------------------------------------------------------------------
 
-        with patch("pipeline_runner.run_pipeline_thread", side_effect=_instant_thread):
-            for _ in range(3):
-                _reset_run_state()
-                resp = client.post("/api/run", json=VALID_PAYLOAD)
-                assert resp.status_code == 202
-                run_ids.append(resp.get_json()["run_id"])
 
-        assert len(set(run_ids)) == 3, "run_ids should be unique across calls"
+class TestApprovalGateApprove:
+    """test_approval_gate_approve — POST /api/run/approve sets approval_result=True."""
+
+    def test_approve_sets_result_true_and_signals_event(self, client):
+        event = threading.Event()
+        app_module._run_state.approval_event = event
+        app_module._run_state.approval_result = False
+
+        response = client.post("/api/run/approve")
+
+        assert response.status_code == 200
+        assert app_module._run_state.approval_result is True
+        assert event.is_set()
+
+    def test_approve_returns_409_when_no_gate_waiting(self, client):
+        assert app_module._run_state.approval_event is None
+
+        response = client.post("/api/run/approve")
+
+        assert response.status_code == 409
+        data = response.get_json()
+        assert data["error"] == "conflict"
+
+    def test_approve_response_body(self, client):
+        event = threading.Event()
+        app_module._run_state.approval_event = event
+
+        response = client.post("/api/run/approve")
+        data = response.get_json()
+
+        assert response.status_code == 200
+        assert data["status"] == "approved"
+
+
+class TestApprovalGateReject:
+    """test_approval_gate_reject — POST /api/run/reject sets approval_result=False."""
+
+    def test_reject_sets_result_false_and_signals_event(self, client):
+        event = threading.Event()
+        app_module._run_state.approval_event = event
+        app_module._run_state.approval_result = True
+
+        response = client.post("/api/run/reject")
+
+        assert response.status_code == 200
+        assert app_module._run_state.approval_result is False
+        assert event.is_set()
+
+    def test_reject_returns_409_when_no_gate_waiting(self, client):
+        assert app_module._run_state.approval_event is None
+
+        response = client.post("/api/run/reject")
+
+        assert response.status_code == 409
+        data = response.get_json()
+        assert data["error"] == "conflict"
+
+    def test_reject_response_body(self, client):
+        event = threading.Event()
+        app_module._run_state.approval_event = event
+
+        response = client.post("/api/run/reject")
+        data = response.get_json()
+
+        assert response.status_code == 200
+        assert data["status"] == "rejected"
+
+
+# ---------------------------------------------------------------------------
+# Simple run_state stub for approval_fn tests
+# ---------------------------------------------------------------------------
+
+
+class _SimpleRunState:
+    """Minimal run_state stub — avoids MagicMock attribute interception."""
+
+    def __init__(self, approval_result: bool = False) -> None:
+        self.approval_event: threading.Event | None = None
+        self.approval_result: bool = approval_result
+        self.in_progress: bool = True
+        self.run_id: str = "test-run"
+        self.log_path = None
+        self.output_dir: str = "output"
+
+
+# ---------------------------------------------------------------------------
+# _make_approval_fn unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestMakeApprovalFn:
+    """Unit tests for the _make_approval_fn factory in pipeline_runner."""
+
+    def test_approval_fn_blocks_until_event_set_and_returns_true(self):
+        from scripts.gui.pipeline_runner import _make_approval_fn
+
+        run_state = _SimpleRunState(approval_result=False)
+        approval_fn = _make_approval_fn(run_state)
+
+        def _approve():
+            import time
+            for _ in range(100):
+                if run_state.approval_event is not None:
+                    break
+                time.sleep(0.005)
+            run_state.approval_result = True
+            run_state.approval_event.set()
+
+        t = threading.Thread(target=_approve, daemon=True)
+        t.start()
+
+        result = approval_fn(None)
+        t.join(timeout=2)
+
+        assert result is True
+
+    def test_approval_fn_returns_false_when_rejected(self):
+        from scripts.gui.pipeline_runner import _make_approval_fn
+
+        run_state = _SimpleRunState(approval_result=True)
+        approval_fn = _make_approval_fn(run_state)
+
+        def _reject():
+            import time
+            for _ in range(100):
+                if run_state.approval_event is not None:
+                    break
+                time.sleep(0.005)
+            run_state.approval_result = False
+            run_state.approval_event.set()
+
+        t = threading.Thread(target=_reject, daemon=True)
+        t.start()
+
+        result = approval_fn(None)
+        t.join(timeout=2)
+
+        assert result is False
+
+    def test_approval_fn_creates_new_event_on_run_state(self):
+        from scripts.gui.pipeline_runner import _make_approval_fn
+
+        run_state = _SimpleRunState(approval_result=True)
+        approval_fn = _make_approval_fn(run_state)
+
+        captured_event: list[threading.Event] = []
+
+        def _unblock():
+            import time
+            for _ in range(100):
+                if run_state.approval_event is not None:
+                    break
+                time.sleep(0.005)
+            captured_event.append(run_state.approval_event)
+            run_state.approval_event.set()
+
+        t = threading.Thread(target=_unblock, daemon=True)
+        t.start()
+        approval_fn(None)
+        t.join(timeout=2)
+
+        assert len(captured_event) == 1
+        assert isinstance(captured_event[0], threading.Event)

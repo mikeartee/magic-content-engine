@@ -10,6 +10,7 @@ from __future__ import annotations
 import threading
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 from flask import Flask, jsonify, request
@@ -18,9 +19,7 @@ from flask import Flask, jsonify, request
 from magic_content_engine.bullpen.models import BullpenBrief
 
 # pipeline_runner is implemented in Task 3; imported here so the background
-# thread call is wired up correctly even though the module is a stub for now.
-# Try relative import first (when loaded as part of the scripts.gui package),
-# fall back to direct import (when scripts/gui is on sys.path directly).
+# thread call is wired up correctly.
 try:
     from . import pipeline_runner
 except ImportError:
@@ -36,16 +35,20 @@ app = Flask(__name__, static_folder="static", static_url_path="/static")
 
 @dataclass
 class RunState:
-    """Mutable state for the currently active (or most recent) pipeline run."""
+    """Mutable state for the currently active (or most recent) pipeline run.
+
+    Protected by ``_run_lock`` for reads/writes that must be atomic.
+    """
 
     in_progress: bool = False
     run_id: Optional[str] = None
     approval_event: Optional[threading.Event] = None
     approval_result: Optional[bool] = None
-    log_path: Optional[str] = None
+    log_path: Optional[Path] = None
     output_dir: Optional[str] = None
 
 
+# Module-level singletons — one run at a time.
 _run_state: RunState = RunState()
 _run_lock: threading.Lock = threading.Lock()
 
@@ -72,8 +75,7 @@ def start_run():
 
     Request body (JSON):
         topic (str): Non-empty topic string.
-        outputs (list[str]): At least one output type from
-            {blog, youtube, cfp, usergroup, digest}.
+        outputs (list[str]): At least one output type.
         dry_run (bool, optional): Passed through to the pipeline (default False).
 
     Returns:
@@ -86,14 +88,12 @@ def start_run():
     topic: str = (body.get("topic") or "").strip()
     outputs: list = body.get("outputs") or []
 
-    # Validate topic
     if not topic:
         return (
             jsonify({"error": "validation", "detail": "topic must be non-empty"}),
             422,
         )
 
-    # Validate outputs
     if not outputs:
         return (
             jsonify(
@@ -122,13 +122,12 @@ def start_run():
 
         _run_state.in_progress = True
         _run_state.run_id = run_id
-        _run_state.approval_event = threading.Event()
+        _run_state.approval_event = None
         _run_state.approval_result = None
         _run_state.log_path = None
         _run_state.output_dir = None
 
     # Start the background pipeline thread.
-    # pipeline_runner.run_pipeline_thread is implemented in Task 3.
     t = threading.Thread(
         target=pipeline_runner.run_pipeline_thread,
         args=(_run_state, brief),
@@ -137,6 +136,49 @@ def start_run():
     t.start()
 
     return jsonify({"run_id": run_id}), 202
+
+
+# ---------------------------------------------------------------------------
+# Approval gate endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.route("/api/run/approve", methods=["POST"])
+def approve_run():
+    """Signal the waiting approval gate to approve (return True).
+
+    Returns 200 if the gate was waiting, 409 if no gate is active.
+    """
+    with _run_lock:
+        event = _run_state.approval_event
+        if event is None:
+            return (
+                jsonify({"error": "conflict", "detail": "No approval gate is currently waiting."}),
+                409,
+            )
+        _run_state.approval_result = True
+        event.set()
+
+    return jsonify({"status": "approved"}), 200
+
+
+@app.route("/api/run/reject", methods=["POST"])
+def reject_run():
+    """Signal the waiting approval gate to reject (return False).
+
+    Returns 200 if the gate was waiting, 409 if no gate is active.
+    """
+    with _run_lock:
+        event = _run_state.approval_event
+        if event is None:
+            return (
+                jsonify({"error": "conflict", "detail": "No approval gate is currently waiting."}),
+                409,
+            )
+        _run_state.approval_result = False
+        event.set()
+
+    return jsonify({"status": "rejected"}), 200
 
 
 # ---------------------------------------------------------------------------
