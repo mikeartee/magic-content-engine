@@ -661,83 +661,6 @@ function renderFileContent(text, filename) {
 }
 
 /**
- * Replace a MIKE placeholder div with an inline editor.
- */
-function openMikeEditor(div) {
-  const instruction = div.dataset.instruction || '';
-
-  const wrapper = document.createElement('div');
-  wrapper.className = 'mike-editor';
-
-  const ta = document.createElement('textarea');
-  ta.placeholder = instruction;
-  ta.rows = 4;
-
-  const actions = document.createElement('div');
-  actions.className = 'mike-editor-actions';
-
-  const saveBtn = document.createElement('button');
-  saveBtn.textContent = 'Save';
-
-  const cancelBtn = document.createElement('button');
-  cancelBtn.textContent = 'Cancel';
-  cancelBtn.style.cssText = 'background:#fff;color:#0066cc;';
-
-  actions.appendChild(saveBtn);
-  actions.appendChild(cancelBtn);
-  wrapper.appendChild(ta);
-  wrapper.appendChild(actions);
-
-  div.replaceWith(wrapper);
-  ta.focus();
-
-  saveBtn.addEventListener('click', async () => {
-    const userText = ta.value;
-    const mikePattern = `<!-- MIKE: ${instruction} -->`;
-    // Also match variations with different spacing
-    const updatedMarkdown = currentRawMarkdown.replace(
-      new RegExp(`<!--\\s*MIKE:\\s*${escapeRegex(instruction)}\\s*-->`, 'g'),
-      userText
-    );
-
-    const statusEl = document.getElementById('save-status');
-    statusEl.textContent = 'Saving...';
-    statusEl.className = '';
-
-    try {
-      const resp = await fetch(`/api/runs/${encodeURIComponent(currentRunId)}/file`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: currentFileName, content: updatedMarkdown })
-      });
-
-      if (resp.ok) {
-        currentRawMarkdown = updatedMarkdown;
-        statusEl.textContent = 'Saved';
-        statusEl.className = 'success';
-        // Re-render with the updated content
-        renderFileContent(currentRawMarkdown, currentFileName);
-        setTimeout(() => { statusEl.textContent = ''; statusEl.className = ''; }, 3000);
-      } else {
-        const data = await resp.json().catch(() => ({}));
-        statusEl.textContent = 'Save failed: ' + (data.detail || resp.status);
-        statusEl.className = 'error';
-        // Restore the editor so the user keeps their edits
-        wrapper.replaceWith(div);
-      }
-    } catch (err) {
-      statusEl.textContent = 'Network error: ' + err.message;
-      statusEl.className = 'error';
-      wrapper.replaceWith(div);
-    }
-  });
-
-  cancelBtn.addEventListener('click', () => {
-    wrapper.replaceWith(div);
-  });
-}
-
-/**
  * Escape a string for use in a RegExp constructor.
  */
 function escapeRegex(str) {
@@ -758,6 +681,10 @@ async function publishToDevTo(published) {
     showPublishStatus('Title is required', 'error');
     return;
   }
+  if (!currentRunId) {
+    showPublishStatus('No run selected', 'error');
+    return;
+  }
 
   const tagsRaw = document.getElementById('publish-tags').value.trim();
   const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
@@ -769,6 +696,7 @@ async function publishToDevTo(published) {
 
   showPublishStatus('Publishing...', '');
 
+  let missingKey = false;
   try {
     const resp = await fetch('/api/publish/devto', {
       method: 'POST',
@@ -781,21 +709,20 @@ async function publishToDevTo(published) {
     if (resp.status === 201) {
       showPublishStatus(`Published! ${data.url || ''}`, 'success');
     } else if (resp.status === 400) {
-      // DEVTO_API_KEY not configured — disable buttons with a note
       showPublishStatus('DEVTO_API_KEY is not configured', 'error');
       publishBtn.title = 'DEVTO_API_KEY is not set — configure it in .env';
       draftBtn.title = 'DEVTO_API_KEY is not set — configure it in .env';
-      // Leave buttons disabled since the key is missing
-      return;
+      missingKey = true;
     } else {
       showPublishStatus(`Failed (${resp.status}): ${data.error || data.detail || 'Unknown error'}`, 'error');
     }
   } catch (err) {
     showPublishStatus('Network error: ' + err.message, 'error');
   } finally {
-    // Only re-enable if we didn't hit the missing-key case (which returns early)
-    publishBtn.disabled = false;
-    draftBtn.disabled = false;
+    if (!missingKey) {
+      publishBtn.disabled = false;
+      draftBtn.disabled = false;
+    }
   }
 }
 
