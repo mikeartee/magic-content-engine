@@ -1,50 +1,57 @@
+#!/usr/bin/env python3
 """
-Entry point for the Bullpen Web GUI.
+Bullpen Web GUI — entry point.
 
 Usage:
     python scripts/run_gui.py
 
 Environment variables:
-    GUI_PORT   Port to listen on (default: 5000)
-
-Loads .env via python-dotenv before starting the Flask development server.
+    GUI_PORT    Port to listen on (default: 5000)
+    DEVTO_API_KEY  dev.to API key for publishing
+    AWS_DEFAULT_REGION  AWS region for DynamoDB (default: ap-southeast-2)
 """
 
 import os
 import sys
+from pathlib import Path
 
-# Load .env — python-dotenv is listed in pyproject.toml dependencies.
+# Load .env from the repo root before importing the app
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_ENV_FILE = _REPO_ROOT / ".env"
+
 try:
     from dotenv import load_dotenv
-
-    load_dotenv()
+    load_dotenv(_ENV_FILE)
 except ImportError:
-    print(
-        "Warning: python-dotenv is not installed. "
-        "Install it with: pip install python-dotenv",
-        file=sys.stderr,
-    )
+    pass  # python-dotenv not installed — rely on environment variables
 
-# Resolve the project root so that `scripts/gui` is importable regardless of
-# the working directory the user launches from.
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_PROJECT_ROOT = os.path.dirname(_HERE)
-if _PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, _PROJECT_ROOT)
+# Ensure the repo root is on sys.path so `scripts.gui.app` is importable
+# regardless of the working directory the user launches from.
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
-from scripts.gui.app import app  # noqa: E402
 
-if __name__ == "__main__":
-    port = int(os.environ.get("GUI_PORT", 5000))
+def main() -> None:
+    port = int(os.environ.get("GUI_PORT", "5000"))
+
+    # Import here so .env is loaded before the app module reads config
+    from scripts.gui.app import app
+
+    print(f"Starting Bullpen Web GUI on http://127.0.0.1:{port}")
+    print("Press Ctrl+C to stop.")
 
     try:
-        app.run(host="127.0.0.1", port=port, debug=False)
+        app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False)
     except OSError as exc:
-        # Port-in-use handling will be completed in Task 16.
-        # For now, log a descriptive message and exit non-zero.
-        print(
-            f"Error: could not bind to port {port}. "
-            f"Is another process already using it? ({exc})",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        if "address already in use" in str(exc).lower() or getattr(exc, "errno", None) in (98, 10048):
+            print(
+                f"ERROR: Port {port} is already in use. "
+                f"Set GUI_PORT to a different port and try again.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        raise
+
+
+if __name__ == "__main__":
+    main()
