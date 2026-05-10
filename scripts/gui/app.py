@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import threading
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request, stream_with_context
 
 # Pipeline imports (read-only consumers — pipeline package is not modified)
 from magic_content_engine.bullpen.models import BullpenBrief
@@ -22,8 +22,10 @@ from magic_content_engine.bullpen.models import BullpenBrief
 # thread call is wired up correctly.
 try:
     from . import pipeline_runner
+    from . import log_tailer
 except ImportError:
     import pipeline_runner  # type: ignore[no-redef]
+    import log_tailer  # type: ignore[no-redef]
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 
@@ -136,6 +138,31 @@ def start_run():
     t.start()
 
     return jsonify({"run_id": run_id}), 202
+
+
+# ---------------------------------------------------------------------------
+# SSE log-tailing endpoint
+# ---------------------------------------------------------------------------
+
+
+@app.route("/api/run/status")
+def run_status():
+    """Stream pipeline progress as Server-Sent Events.
+
+    Opens ``output/agent-log.jsonl`` (relative to the repo root), seeks to
+    the end, and forwards each new JSON line to the browser as an SSE
+    ``data:`` frame. A synthetic ``pipeline_complete`` event is emitted
+    when the pipeline thread exits.
+    """
+    generator = log_tailer.tail_log(_run_state)
+
+    response = Response(
+        stream_with_context(generator),
+        mimetype="text/event-stream",
+    )
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["X-Accel-Buffering"] = "no"
+    return response
 
 
 # ---------------------------------------------------------------------------
