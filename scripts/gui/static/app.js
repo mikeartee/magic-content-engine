@@ -256,6 +256,11 @@ function showVerdict(details) {
 function showApprovalButtons() {
   markAgentActive('approval_gate');
   document.getElementById('approval-actions').classList.remove('hidden');
+  // Load the current run's files into the Review panel so the user can see
+  // what they're approving
+  if (currentRunId) {
+    loadRunFiles(currentRunId);
+  }
   showPanel('review');
 }
 
