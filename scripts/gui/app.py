@@ -193,7 +193,18 @@ def list_runs():
     for entry in sorted(_OUTPUT_DIR.iterdir(), key=lambda p: p.name, reverse=True):
         if not entry.is_dir():
             continue
-        files = sorted(f.name for f in entry.iterdir() if f.is_file() and f.name not in _EXCLUDED_FILES)
+        # Collect files from the run dir AND one level of subdirectories
+        # (the pipeline writes output to <run_id>/<date>-<slug>/post.md)
+        files = []
+        for item in entry.iterdir():
+            if item.is_file() and item.name not in _EXCLUDED_FILES:
+                files.append(item.name)
+            elif item.is_dir():
+                for sub in item.iterdir():
+                    if sub.is_file() and sub.name not in _EXCLUDED_FILES:
+                        # Store as subdir/filename so it round-trips through the file API
+                        files.append(f"{item.name}/{sub.name}")
+        files.sort()
         runs.append({"id": entry.name, "files": files})
     return jsonify({"runs": runs})
 

@@ -31,8 +31,9 @@ def _tail_log(log_path: Path, run_state: Any) -> Generator[str, None, None]:
     """
     try:
         with open(log_path, "a+", encoding="utf-8") as fh:
-            # Seek to end — only tail new content written after this point.
-            fh.seek(0, 2)
+            # Start from the beginning so clients that connect mid-run see
+            # everything that has happened so far (browser refresh replay).
+            fh.seek(0, 0)
 
             idle_seconds = 0  # seconds elapsed with no new lines after pipeline done
 
