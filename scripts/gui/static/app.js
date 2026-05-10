@@ -12,14 +12,14 @@ let currentRunId = null;
 /** The active EventSource for SSE log tailing. */
 let eventSource = null;
 
-/** Raw Markdown content of the currently displayed file (used for MIKE edits). */
+/** Raw Markdown content of the currently displayed file. */
 let currentRawMarkdown = '';
 
 /** The filename currently displayed in the Review Panel. */
 let currentFileName = '';
 
-/** When true, no SSE event is allowed to overwrite the Review panel content. */
-let reviewPanelLocked = false;
+/** True once the current run's files have been auto-loaded once. Prevents re-loading. */
+let reviewAutoLoaded = false;
 
 // ============================================================
 // Utility functions
@@ -175,8 +175,8 @@ function resetProgressView() {
   document.getElementById('approval-actions').classList.add('hidden');
   document.getElementById('approve-btn').disabled = false;
   document.getElementById('reject-btn').disabled = false;
-  // New run — allow the Review panel to be populated again
-  reviewPanelLocked = false;
+  // New run — reset the Review auto-load gate so this run gets populated
+  reviewAutoLoaded = false;
 }
 
 /**
@@ -261,11 +261,12 @@ function showVerdict(details) {
 function showApprovalButtons() {
   markAgentActive('approval_gate');
   document.getElementById('approval-actions').classList.remove('hidden');
-  // Load the current run's files into the Review panel (unless it's already loaded)
-  if (currentRunId && !reviewPanelLocked) {
+  // Auto-load Review panel ONCE per run, never after
+  if (currentRunId && !reviewAutoLoaded) {
+    reviewAutoLoaded = true;
     loadRunFiles(currentRunId);
   }
-  showPanel('review');
+  // Don't force a panel switch — user might be on Progress watching events
 }
 
 /**
@@ -291,8 +292,9 @@ function onPipelineComplete(event) {
   // Refresh run history once
   loadRunHistory();
 
-  // Only auto-load files if the Review panel isn't locked
-  if (currentRunId && !reviewPanelLocked) {
+  // Auto-load Review panel ONCE per run
+  if (currentRunId && !reviewAutoLoaded) {
+    reviewAutoLoaded = true;
     loadRunFiles(currentRunId);
   }
 }
@@ -466,6 +468,7 @@ async function loadRunHistory() {
         list.querySelectorAll('li').forEach(el => el.classList.remove('selected'));
         li.classList.add('selected');
         currentRunId = run.id;
+        reviewAutoLoaded = true;  // user has chosen a run; don't let SSE override
         loadRunFiles(run.id);
         showPanel('review');
       });
@@ -579,9 +582,6 @@ async function loadFileContent(runId, filename) {
  */
 function renderFileContent(text, filename) {
   const contentArea = document.getElementById('content-area');
-
-  // Lock the panel — no SSE event should replace this content now
-  reviewPanelLocked = true;
 
   // Build the editor: textarea + Save button
   contentArea.innerHTML = '';
