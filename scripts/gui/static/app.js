@@ -256,9 +256,10 @@ function showVerdict(details) {
 function showApprovalButtons() {
   markAgentActive('approval_gate');
   document.getElementById('approval-actions').classList.remove('hidden');
-  // Load the current run's files into the Review panel so the user can see
-  // what they're approving
-  if (currentRunId) {
+  // Load the current run's files into the Review panel (unless user is already editing)
+  const contentArea = document.getElementById('content-area');
+  const hasEditor = contentArea && contentArea.querySelector('#article-editor');
+  if (currentRunId && !hasEditor) {
     loadRunFiles(currentRunId);
   }
   showPanel('review');
@@ -284,9 +285,13 @@ function onPipelineComplete(event) {
     showError('pipeline-error', msg);
   }
 
-  // Refresh run history and load the new run into Review/Publish panels
+  // Refresh run history once
   loadRunHistory();
-  if (currentRunId) {
+
+  // Only auto-load files if the Review panel is empty — don't clobber active edits
+  const contentArea = document.getElementById('content-area');
+  const hasEditor = contentArea && contentArea.querySelector('#article-editor');
+  if (currentRunId && !hasEditor) {
     loadRunFiles(currentRunId);
   }
 }
@@ -568,59 +573,86 @@ async function loadFileContent(runId, filename) {
 }
 
 /**
- * Render file content in the Review Panel.
- * Markdown files are rendered with marked.js; MIKE placeholders become editable regions.
- * Plain text files are shown as preformatted text.
+ * Render file content in the Review Panel as an editable textarea.
+ * Users can edit the raw Markdown directly and save with the Save button.
  */
 function renderFileContent(text, filename) {
   const contentArea = document.getElementById('content-area');
-  const isMarkdown = filename.endsWith('.md');
 
-  if (!isMarkdown) {
-    contentArea.innerHTML = `<pre style="white-space:pre-wrap;word-break:break-word;">${escapeHtml(text)}</pre>`;
-    return;
-  }
+  // Build the editor: textarea + Save button
+  contentArea.innerHTML = '';
+  contentArea.style.cssText = 'padding: 0;';
 
-  // Split on MIKE placeholders before rendering Markdown
-  // Pattern: <!-- MIKE: [instruction, ~N words] -->
-  const MIKE_RE = /<!--\s*MIKE:\s*(.*?)\s*-->/g;
+  const textarea = document.createElement('textarea');
+  textarea.id = 'article-editor';
+  textarea.value = text;
+  textarea.spellcheck = true;
+  textarea.style.cssText = 'width: 100%; min-height: 600px; padding: 16px; border: 1px solid #ddd; border-radius: 4px; font-family: Consolas, Monaco, monospace; font-size: 0.9rem; line-height: 1.5; resize: vertical; background: #fff; color: #1a1a1a; box-sizing: border-box;';
 
-  // Replace MIKE comments with a unique sentinel so marked.js doesn't eat them
-  const SENTINEL_PREFIX = '__MIKE_PLACEHOLDER_';
-  const placeholders = [];
-  const textWithSentinels = text.replace(MIKE_RE, (match, instruction) => {
-    const idx = placeholders.length;
-    placeholders.push(instruction.trim());
-    return `${SENTINEL_PREFIX}${idx}__`;
-  });
+  const actionBar = document.createElement('div');
+  actionBar.style.cssText = 'display: flex; gap: 10px; margin-top: 8px; align-items: center;';
 
-  // Render Markdown
-  let html;
-  if (typeof marked !== 'undefined') {
-    html = marked.parse(textWithSentinels);
-  } else {
-    // Fallback: plain text if marked.js not loaded
-    html = `<pre style="white-space:pre-wrap;">${escapeHtml(textWithSentinels)}</pre>`;
-  }
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = 'Save';
+  saveBtn.style.cssText = 'padding: 8px 16px;';
 
-  // Replace sentinels with MIKE placeholder divs
-  placeholders.forEach((instruction, idx) => {
-    const sentinel = `${SENTINEL_PREFIX}${idx}__`;
-    // The sentinel may appear inside a <p> tag — replace the whole <p> if so
-    const pWrapped = new RegExp(`<p>\\s*${sentinel}\\s*</p>`, 'g');
-    const mikeDiv = `<div class="mike-placeholder" data-instruction="${escapeHtml(instruction)}">${escapeHtml(instruction)}</div>`;
-    if (pWrapped.test(html)) {
-      html = html.replace(pWrapped, mikeDiv);
-    } else {
-      html = html.replace(sentinel, mikeDiv);
+  const previewBtn = document.createElement('button');
+  previewBtn.textContent = 'Preview';
+  previewBtn.style.cssText = 'padding: 8px 16px; background: #fff; color: #0066cc;';
+
+  actionBar.appendChild(saveBtn);
+  actionBar.appendChild(previewBtn);
+
+  contentArea.appendChild(textarea);
+  contentArea.appendChild(actionBar);
+
+  // Save button — POST the current textarea value to /api/runs/<id>/file
+  saveBtn.addEventListener('click', async () => {
+    const statusEl = document.getElementById('save-status');
+    statusEl.textContent = 'Saving...';
+    statusEl.className = '';
+    try {
+      const resp = await fetch(`/api/runs/${encodeURIComponent(currentRunId)}/file`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: currentFileName, content: textarea.value })
+      });
+      if (resp.ok) {
+        currentRawMarkdown = textarea.value;
+        statusEl.textContent = 'Saved';
+        statusEl.className = 'success';
+        setTimeout(() => { statusEl.textContent = ''; statusEl.className = ''; }, 3000);
+      } else {
+        const data = await resp.json().catch(() => ({}));
+        statusEl.textContent = 'Save failed: ' + (data.detail || resp.status);
+        statusEl.className = 'error';
+      }
+    } catch (err) {
+      statusEl.textContent = 'Network error: ' + err.message;
+      statusEl.className = 'error';
     }
   });
 
-  contentArea.innerHTML = html;
+  // Preview button — swap textarea for rendered Markdown, click "Edit" to return
+  previewBtn.addEventListener('click', () => {
+    const markdown = textarea.value;
+    contentArea.innerHTML = '';
 
-  // Wire up click handlers for MIKE placeholder divs
-  contentArea.querySelectorAll('.mike-placeholder').forEach(div => {
-    div.addEventListener('click', () => openMikeEditor(div));
+    const previewDiv = document.createElement('div');
+    previewDiv.style.cssText = 'padding: 16px; background: #fff; border: 1px solid #ddd; border-radius: 4px; line-height: 1.6;';
+    if (typeof marked !== 'undefined') {
+      previewDiv.innerHTML = marked.parse(markdown);
+    } else {
+      previewDiv.textContent = markdown;
+    }
+
+    const editBtn = document.createElement('button');
+    editBtn.textContent = 'Back to editor';
+    editBtn.style.cssText = 'margin-top: 10px; padding: 8px 16px; background: #fff; color: #0066cc;';
+    editBtn.addEventListener('click', () => renderFileContent(markdown, filename));
+
+    contentArea.appendChild(previewDiv);
+    contentArea.appendChild(editBtn);
   });
 }
 
