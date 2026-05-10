@@ -14,11 +14,11 @@
       <img src="/static/bullpen-logo.svg" alt="Bullpen" class="nav-logo" />
       <span>Bullpen</span>
     </div>
-    <button class="nav-btn active" data-target="ideas">Ideas</button>
-    <button class="nav-btn" data-target="progress">Progress</button>
-    <button class="nav-btn" data-target="review">Review</button>
-    <button class="nav-btn" data-target="publish">Publish</button>
-    <button class="nav-btn" data-target="history">History</button>
+    <button class="nav-btn active" type="button" data-target="ideas">Ideas</button>
+    <button class="nav-btn" type="button" data-target="progress">Progress</button>
+    <button class="nav-btn" type="button" data-target="review">Review</button>
+    <button class="nav-btn" type="button" data-target="publish">Publish</button>
+    <button class="nav-btn" type="button" data-target="history">History</button>
   </nav>
 
   <!-- Main content area -->
@@ -73,8 +73,8 @@
       </ol>
 
       <div id="approval-actions" class="hidden">
-        <button id="approve-btn">Approve</button>
-        <button id="reject-btn">Reject</button>
+        <button id="approve-btn" type="button">Approve</button>
+        <button id="reject-btn" type="button">Reject</button>
       </div>
 
       <div id="verdict-area"></div>
@@ -101,15 +101,17 @@
       <h2>Publish</h2>
 
       <div class="publish-meta">
-        <label for="publish-title">Article title<input type="text" id="publish-title" placeholder="e.g. Building AI tooling on AWS" /></label>
-        <label for="publish-tags">Tags<input type="text" id="publish-tags" placeholder="e.g. aws, python, kiro" /></label>
+        <label for="publish-title">Article title</label>
+        <input type="text" id="publish-title" placeholder="e.g. Building AI tooling on AWS" />
+        <label for="publish-tags">Tags</label>
+        <input type="text" id="publish-tags" placeholder="e.g. aws, python, kiro" />
       </div>
 
       <div class="publish-actions">
-        <button id="publish-devto-btn">Publish to dev.to</button>
-        <button id="draft-devto-btn">Save as draft</button>
-        <button id="copy-linkedin-btn" class="hidden">Copy LinkedIn post</button>
-        <button id="download-script-btn" class="hidden">Download YouTube script</button>
+        <button id="publish-devto-btn" type="button">Publish to dev.to</button>
+        <button id="draft-devto-btn" type="button">Save as draft</button>
+        <button id="copy-linkedin-btn" type="button" class="hidden">Copy LinkedIn post</button>
+        <button id="download-script-btn" type="button" class="hidden">Download YouTube script</button>
       </div>
 
       <div id="publish-status"></div>

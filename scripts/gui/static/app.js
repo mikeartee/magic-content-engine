@@ -78,6 +78,7 @@ function showPublishStatus(msg, cls) {
  * Panels are identified by their data-panel attribute.
  */
 function showPanel(name) {
+  console.log('[DEBUG-a4f2] showPanel called with:', name, 'from:', new Error().stack.split('\n')[2]);
   document.querySelectorAll('[data-panel]').forEach(section => {
     section.classList.toggle('active', section.dataset.panel === name);
   });
@@ -597,10 +598,12 @@ function renderFileContent(text, filename) {
   actionBar.style.cssText = 'display: flex; gap: 10px; margin-top: 8px; align-items: center;';
 
   const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
   saveBtn.textContent = 'Save';
   saveBtn.style.cssText = 'padding: 8px 16px;';
 
   const previewBtn = document.createElement('button');
+  previewBtn.type = 'button';
   previewBtn.textContent = 'Preview';
   previewBtn.style.cssText = 'padding: 8px 16px; background: #fff; color: #0066cc;';
 
@@ -651,6 +654,7 @@ function renderFileContent(text, filename) {
     }
 
     const editBtn = document.createElement('button');
+    editBtn.type = 'button';
     editBtn.textContent = 'Back to editor';
     editBtn.style.cssText = 'margin-top: 10px; padding: 8px 16px; background: #fff; color: #0066cc;';
     editBtn.addEventListener('click', () => renderFileContent(markdown, filename));

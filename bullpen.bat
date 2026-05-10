@@ -6,5 +6,9 @@ for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":5000 "') do (
     taskkill /F /PID %%a >nul 2>&1
 )
 
-REM Launch Bullpen (tray icon + browser open handled by run_gui.py)
-pythonw scripts/run_gui.py
+REM Launch Bullpen — logs errors to bullpen-error.log
+python scripts/run_gui.py 2>bullpen-error.log
+if %errorlevel% neq 0 (
+    echo Error starting Bullpen. Check bullpen-error.log for details.
+    pause
+)

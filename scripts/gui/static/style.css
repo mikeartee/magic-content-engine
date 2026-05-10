@@ -523,6 +523,13 @@ select:focus {
   max-width: 480px;
 }
 
+.publish-meta label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #555;
+  margin-bottom: -4px;
+}
+
 .publish-meta input[type="text"] {
   margin-top: 0;
 }
