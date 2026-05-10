@@ -1,0 +1,587 @@
+/* ============================================================
+   CSS Reset
+   ============================================================ */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+}
+
+/* ============================================================
+   Layout — sidebar + main
+   ============================================================ */
+body {
+  display: flex;
+  min-height: 100vh;
+  background: #f5f5f5;
+  color: #1a1a1a;
+}
+
+/* Sidebar navigation */
+#sidebar {
+  width: 160px;
+  min-width: 160px;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.nav-brand {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #ffffff;
+  padding: 0 16px 16px;
+  border-bottom: 1px solid #2e2e4e;
+  margin-bottom: 8px;
+  letter-spacing: 0.03em;
+}
+
+.nav-btn {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: #b0b0c8;
+  text-align: left;
+  padding: 10px 16px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background 0.15s, color 0.15s;
+}
+
+.nav-btn:hover {
+  background: #2e2e4e;
+  color: #ffffff;
+}
+
+.nav-btn.active {
+  color: #ffffff;
+  border-left-color: #4d9fff;
+  background: #2e2e4e;
+  font-weight: 600;
+}
+
+/* Main content area */
+#main {
+  flex: 1;
+  padding: 32px;
+  overflow-y: auto;
+  max-width: 900px;
+}
+
+/* ============================================================
+   Panel visibility
+   ============================================================ */
+[data-panel] {
+  display: none;
+}
+
+[data-panel].active {
+  display: block;
+}
+
+/* ============================================================
+   Typography
+   ============================================================ */
+h2 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin: 0 0 20px;
+  color: #1a1a1a;
+}
+
+/* ============================================================
+   Forms
+   ============================================================ */
+.form-group {
+  margin-bottom: 16px;
+}
+
+label {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin-bottom: 4px;
+  color: #333;
+}
+
+input[type="text"] {
+  display: block;
+  width: 100%;
+  max-width: 480px;
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  margin-top: 4px;
+  background: #fff;
+  color: #1a1a1a;
+}
+
+input[type="text"]:focus {
+  outline: none;
+  border-color: #0066cc;
+  box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.2);
+}
+
+fieldset {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+
+legend {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #555;
+  padding: 0 4px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: 400;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+.checkbox-label:last-child {
+  margin-bottom: 0;
+}
+
+input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+/* ============================================================
+   Buttons
+   ============================================================ */
+button {
+  display: inline-block;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  font-weight: 500;
+  border: 1px solid #0066cc;
+  border-radius: 4px;
+  background: #0066cc;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+button:hover:not(:disabled) {
+  background: #0052a3;
+  border-color: #0052a3;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Secondary / outline buttons */
+#reject-btn,
+#draft-devto-btn,
+#copy-linkedin-btn,
+#download-script-btn {
+  background: #fff;
+  color: #0066cc;
+}
+
+#reject-btn:hover:not(:disabled),
+#draft-devto-btn:hover:not(:disabled),
+#copy-linkedin-btn:hover:not(:disabled),
+#download-script-btn:hover:not(:disabled) {
+  background: #e8f0fb;
+}
+
+/* Danger button */
+#reject-btn {
+  border-color: #cc0000;
+  color: #cc0000;
+}
+
+#reject-btn:hover:not(:disabled) {
+  background: #fff0f0;
+  border-color: #aa0000;
+  color: #aa0000;
+}
+
+/* ============================================================
+   Utility
+   ============================================================ */
+.hidden {
+  display: none !important;
+}
+
+/* ============================================================
+   Error messages
+   ============================================================ */
+.error {
+  color: #cc0000;
+  padding: 8px;
+  font-size: 0.9rem;
+  border-radius: 4px;
+  background: #fff0f0;
+  border: 1px solid #f5c6c6;
+  margin-top: 8px;
+}
+
+/* ============================================================
+   Suggestions list (Ideas Panel)
+   ============================================================ */
+#suggestions-list {
+  margin-bottom: 24px;
+}
+
+.suggestion-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  gap: 12px;
+}
+
+.suggestion-topic {
+  font-weight: 500;
+  flex: 1;
+}
+
+.suggestion-meta {
+  font-size: 0.8rem;
+  color: #666;
+  white-space: nowrap;
+}
+
+.suggestion-item button {
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.suggestions-warning {
+  color: #856404;
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+}
+
+/* ============================================================
+   Agent sequence (Progress View)
+   ============================================================ */
+#agent-sequence {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 24px;
+}
+
+#agent-sequence li {
+  padding: 8px 12px;
+  border-left: 3px solid #ccc;
+  margin-bottom: 4px;
+  font-size: 0.95rem;
+  background: #fff;
+  border-radius: 0 4px 4px 0;
+  transition: border-color 0.2s;
+}
+
+#agent-sequence li.active {
+  border-color: #0066cc;
+  font-weight: bold;
+  background: #e8f0fb;
+}
+
+#agent-sequence li.complete {
+  border-color: #00aa44;
+  color: #006629;
+}
+
+#agent-sequence li.error {
+  border-color: #cc0000;
+  color: #cc0000;
+}
+
+#agent-sequence li.approval-gate {
+  font-style: italic;
+}
+
+/* Approval action buttons */
+#approval-actions {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+/* Verdict area */
+#verdict-area {
+  margin-top: 16px;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  min-height: 40px;
+}
+
+#verdict-area:empty {
+  display: none;
+}
+
+/* ============================================================
+   Review Panel
+   ============================================================ */
+.review-controls {
+  margin-bottom: 16px;
+}
+
+select {
+  padding: 6px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  background: #fff;
+  color: #1a1a1a;
+  cursor: pointer;
+  min-width: 200px;
+}
+
+select:focus {
+  outline: none;
+  border-color: #0066cc;
+  box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.2);
+}
+
+#content-area {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 24px;
+  min-height: 200px;
+  line-height: 1.6;
+}
+
+/* Rendered Markdown styles inside content area */
+#content-area h1,
+#content-area h2,
+#content-area h3,
+#content-area h4 {
+  margin: 1em 0 0.5em;
+}
+
+#content-area p {
+  margin: 0 0 1em;
+}
+
+#content-area ul,
+#content-area ol {
+  margin: 0 0 1em;
+  padding-left: 1.5em;
+}
+
+#content-area code {
+  background: #f0f0f0;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+
+#content-area pre {
+  background: #f0f0f0;
+  padding: 12px;
+  border-radius: 4px;
+  overflow-x: auto;
+  margin: 0 0 1em;
+}
+
+#content-area pre code {
+  background: none;
+  padding: 0;
+}
+
+#content-area blockquote {
+  border-left: 3px solid #ccc;
+  margin: 0 0 1em;
+  padding: 4px 12px;
+  color: #555;
+}
+
+#save-status {
+  margin-top: 8px;
+  font-size: 0.85rem;
+  min-height: 20px;
+}
+
+#save-status.success {
+  color: #006629;
+}
+
+#save-status.error {
+  color: #cc0000;
+}
+
+/* ============================================================
+   MIKE placeholders
+   ============================================================ */
+.mike-placeholder {
+  background: #fff3cd;
+  border: 1px dashed #ffc107;
+  padding: 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  margin: 8px 0;
+  font-size: 0.9rem;
+  color: #856404;
+  position: relative;
+}
+
+.mike-placeholder::before {
+  content: "✏️ MIKE: ";
+  font-weight: 600;
+}
+
+.mike-placeholder:hover {
+  background: #fff0b3;
+  border-color: #e6a800;
+}
+
+.mike-editor {
+  margin: 8px 0;
+}
+
+.mike-editor textarea {
+  display: block;
+  width: 100%;
+  min-height: 80px;
+  padding: 8px;
+  border: 1px solid #0066cc;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  resize: vertical;
+  background: #fff;
+  color: #1a1a1a;
+}
+
+.mike-editor textarea:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.2);
+}
+
+.mike-editor-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.mike-editor-actions button {
+  padding: 4px 12px;
+  font-size: 0.85rem;
+}
+
+/* ============================================================
+   Publish Panel
+   ============================================================ */
+.publish-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+  max-width: 480px;
+}
+
+.publish-meta input[type="text"] {
+  margin-top: 0;
+}
+
+.publish-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+#publish-status {
+  margin-top: 8px;
+  font-size: 0.9rem;
+  min-height: 20px;
+}
+
+#publish-status.success {
+  color: #006629;
+}
+
+#publish-status.error {
+  color: #cc0000;
+}
+
+/* ============================================================
+   Run History (sidebar section)
+   ============================================================ */
+[data-panel="history"] {
+  max-width: 600px;
+}
+
+#run-history-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
+}
+
+#run-history-list li {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+#run-history-list li:hover {
+  background: #e8f0fb;
+  border-color: #0066cc;
+}
+
+#run-history-list li.selected {
+  background: #e8f0fb;
+  border-color: #0066cc;
+  font-weight: 600;
+}
+
+.run-history-name {
+  font-weight: 500;
+  font-size: 0.9rem;
+  margin-bottom: 4px;
+}
+
+.run-history-files {
+  font-size: 0.8rem;
+  color: #666;
+}

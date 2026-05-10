@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Magic Content Engine — Bullpen</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+  <!-- Sidebar navigation -->
+  <nav id="sidebar">
+    <div class="nav-brand">Bullpen</div>
+    <button class="nav-btn active" data-target="ideas">Ideas</button>
+    <button class="nav-btn" data-target="progress">Progress</button>
+    <button class="nav-btn" data-target="review">Review</button>
+    <button class="nav-btn" data-target="publish">Publish</button>
+    <button class="nav-btn" data-target="history">History</button>
+  </nav>
+
+  <!-- Main content area -->
+  <main id="main">
+
+    <!-- Ideas Panel -->
+    <section data-panel="ideas" class="active">
+      <h2>Topic Ideas</h2>
+
+      <div id="suggestions-list"></div>
+
+      <form id="run-form">
+        <div class="form-group">
+          <label for="topic-input">Topic:
+            <input type="text" id="topic-input" name="topic" required placeholder="e.g. AgentCore GA launch" />
+          </label>
+        </div>
+
+        <fieldset class="form-group">
+          <legend>Output types</legend>
+          <label class="checkbox-label">
+            <input type="checkbox" name="output_type" value="blog_post" checked />
+            Blog post
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" name="output_type" value="linkedin_post" />
+            LinkedIn post
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" name="output_type" value="youtube_script" />
+            YouTube script
+          </label>
+        </fieldset>
+
+        <button type="submit" id="run-btn">Run Pipeline</button>
+      </form>
+
+      <div id="run-error" class="error hidden"></div>
+    </section>
+
+    <!-- Progress View -->
+    <section data-panel="progress">
+      <h2>Pipeline Progress</h2>
+
+      <ol id="agent-sequence">
+        <li data-agent="researcher">Researcher</li>
+        <li data-agent="desk_editor">Desk Editor</li>
+        <li data-agent="writer">Writer</li>
+        <li data-agent="subeditor">Subeditor</li>
+        <li data-agent="approval_gate" class="approval-gate">Approval Gate</li>
+        <li data-agent="publisher">Publisher</li>
+      </ol>
+
+      <div id="approval-actions" class="hidden">
+        <button id="approve-btn">Approve</button>
+        <button id="reject-btn">Reject</button>
+      </div>
+
+      <div id="verdict-area"></div>
+
+      <div id="pipeline-error" class="error hidden"></div>
+    </section>
+
+    <!-- Review Panel -->
+    <section data-panel="review">
+      <h2>Review Content</h2>
+
+      <div class="review-controls">
+        <select id="file-selector"></select>
+      </div>
+
+      <div id="content-area"></div>
+
+      <div id="save-status"></div>
+    </section>
+
+    <!-- Publish Panel -->
+    <section data-panel="publish">
+      <h2>Publish</h2>
+
+      <div class="publish-meta">
+        <input type="text" id="publish-title" placeholder="Article title" />
+        <input type="text" id="publish-tags" placeholder="Tags (comma-separated)" />
+      </div>
+
+      <div class="publish-actions">
+        <button id="publish-devto-btn">Publish to dev.to</button>
+        <button id="draft-devto-btn">Save as draft</button>
+        <button id="copy-linkedin-btn" class="hidden">Copy LinkedIn post</button>
+        <button id="download-script-btn" class="hidden">Download YouTube script</button>
+      </div>
+
+      <div id="publish-status"></div>
+    </section>
+
+    <!-- Run History -->
+    <section data-panel="history">
+      <h2>Run History</h2>
+      <ul id="run-history-list"></ul>
+    </section>
+
+  </main>
+
+  <script src="/static/vendor/marked.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
