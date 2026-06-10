@@ -280,7 +280,12 @@ def download_file(run_id: str, filename: str):
 # Vault-based suggestions
 # ---------------------------------------------------------------------------
 
-_VAULT_ROOT = Path(os.environ.get("VAULT_PATH", r"C:\Users\Mike RT\Documents\second-brain"))
+_DEFAULT_VAULT_PATH = r"C:\Users\Mike RT\Documents\second-brain"
+
+
+def _vault_root() -> Path:
+    """Read VAULT_PATH at call time so tests can override via monkeypatch."""
+    return Path(os.environ.get("VAULT_PATH", _DEFAULT_VAULT_PATH))
 
 
 def _extract_vault_suggestions() -> list[dict]:
@@ -293,6 +298,7 @@ def _extract_vault_suggestions() -> list[dict]:
     """
     suggestions = []
     seen_topics = set()
+    vault_root = _vault_root()
 
     def _add(topic: str, source_path: Path, mtime_date: date):
         if topic.lower() in seen_topics or len(topic) < 5:
@@ -303,11 +309,11 @@ def _extract_vault_suggestions() -> list[dict]:
             "topic": topic,
             "last_covered": mtime_date.isoformat(),
             "days_since": days_since,
-            "source": str(source_path.relative_to(_VAULT_ROOT)),
+            "source": str(source_path.relative_to(vault_root)),
         })
 
     # 1. Permanent notes — use filename as topic (strip leading ID if present)
-    permanent_dir = _VAULT_ROOT / "06-permanent"
+    permanent_dir = vault_root / "06-permanent"
     if permanent_dir.is_dir():
         for md_file in sorted(permanent_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
             stem = md_file.stem
@@ -319,7 +325,7 @@ def _extract_vault_suggestions() -> list[dict]:
                 return suggestions
 
     # 2. Inbox notes
-    inbox_dir = _VAULT_ROOT / "00-inbox"
+    inbox_dir = vault_root / "00-inbox"
     if inbox_dir.is_dir():
         for md_file in sorted(inbox_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
             try:
@@ -344,12 +350,13 @@ def _extract_vault_suggestions() -> list[dict]:
 
 @app.route("/api/suggestions")
 def get_suggestions():
-    # Try vault first
+    # Try vault first. Only short-circuit if we actually found suggestions.
     try:
-        if _VAULT_ROOT.is_dir():
-            suggestions = _extract_vault_suggestions()
-            return jsonify({"suggestions": suggestions})
-    except Exception as exc:
+        if _vault_root().is_dir():
+            vault_suggestions = _extract_vault_suggestions()
+            if vault_suggestions:
+                return jsonify({"suggestions": vault_suggestions})
+    except Exception:
         pass  # fall through to DynamoDB
 
     # Fall back to DynamoDB topic coverage table
@@ -397,6 +404,27 @@ def get_suggestions():
 # ---------------------------------------------------------------------------
 
 
+def _find_post_md(run_id: str) -> Optional[Path]:
+    """Locate post.md for a run.
+
+    The writer may place it directly under ``output/<run_id>/post.md`` or
+    nested one level deeper as ``output/<run_id>/<date-slug>/post.md``.
+    Return the first match found, or ``None``.
+    """
+    run_dir = _OUTPUT_DIR / run_id
+    if not run_dir.is_dir():
+        return None
+    direct = run_dir / "post.md"
+    if direct.exists():
+        return direct
+    for sub in run_dir.iterdir():
+        if sub.is_dir():
+            candidate = sub / "post.md"
+            if candidate.exists():
+                return candidate
+    return None
+
+
 @app.route("/api/publish/devto", methods=["POST"])
 def publish_devto():
     api_key = os.environ.get("DEVTO_API_KEY", "")
@@ -409,8 +437,8 @@ def publish_devto():
     tags = data.get("tags", [])
     published = data.get("published", False)
 
-    post_path = _OUTPUT_DIR / run_id / "post.md"
-    if not post_path.exists():
+    post_path = _find_post_md(run_id)
+    if post_path is None:
         return jsonify({"error": "not_found", "detail": f"post.md not found for run {run_id!r}"}), 404
 
     body_markdown = post_path.read_text(encoding="utf-8")

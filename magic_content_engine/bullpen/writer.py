@@ -434,6 +434,18 @@ def _write_file(
     files_written: list[FileEntry],
 ) -> None:
     """Write *content* to *bundle_path/filename*, validate voice rules, record entry."""
+    # Final safety net: scrub em-dashes and any stray Unicode dashes from the
+    # fully assembled content. Em-dashes can enter via article titles embedded
+    # in MIKE placeholder instructions (e.g. "Strands Agents\u2014Open Source..."
+    # from a scraped source), even when the LLM output itself is clean.
+    content = (
+        content
+        .replace("\u2014", " - ")  # em-dash
+        .replace("\u2013", " - ")  # en-dash
+        .replace("&#8212;", " - ")
+        .replace("&mdash;", " - ")
+    )
+
     file_path = bundle_path / filename
     file_path.write_text(content, encoding="utf-8")
 

@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-MAX_REVISION_CYCLES: int = 2
+MAX_REVISION_CYCLES: int = 3
 
 VALID_OUTPUT_TYPES: frozenset[str] = frozenset(
     {
