@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/mikeartee/magic-content-engine/console/internal/run"
 	"github.com/mikeartee/magic-content-engine/console/internal/server"
 	"github.com/mikeartee/magic-content-engine/console/web"
 )
@@ -23,11 +24,15 @@ import (
 // this skeleton keeps the default in one place so it does not block that work.
 const defaultPort = 5057
 
+// outputRoot is the parent directory of every output/<run_id>/ run bundle.
+const outputRoot = "output"
+
 func main() {
 	port := flag.Int("port", defaultPort, "loopback port to listen on")
 	flag.Parse()
 
 	srv := server.New(web.Static())
+	srv.SetRunManager(run.New(outputRoot, run.DefaultStarter))
 	addr := server.ListenAddr(*port)
 
 	httpServer := &http.Server{
