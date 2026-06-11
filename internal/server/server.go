@@ -13,10 +13,13 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"net"
 	"net/http"
 	"strconv"
+
+	"github.com/mikeartee/magic-content-engine/console/internal/run"
 )
 
 // LoopbackHost is the only interface the Console ever binds to. The listener is
@@ -30,17 +33,33 @@ func ListenAddr(port int) string {
 	return net.JoinHostPort(LoopbackHost, strconv.Itoa(port))
 }
 
-// Server holds the dependencies needed to serve the Console. For this skeleton
-// slice the only dependency is the embedded UI file system; later slices add
-// the run manager, SSE hub, file service, vault and dev.to publisher.
+// RunStarter is the slice of the Run_Manager the HTTP server depends on to
+// start a Run. It is declared here (consumer-side) so the server stays
+// decoupled from the concrete *run.Manager and so handlers can be tested with a
+// fake. Later slices may widen this as approval and status wiring land.
+type RunStarter interface {
+	Start(req run.StartRequest) (run.RunHandle, error)
+}
+
+// Server holds the dependencies needed to serve the Console. For this slice the
+// dependencies are the embedded UI file system and the run manager; later
+// slices add the SSE hub, file service, vault and dev.to publisher.
 type Server struct {
-	ui fs.FS // embedded UI assets (rooted at the static directory)
+	ui   fs.FS      // embedded UI assets (rooted at the static directory)
+	runs RunStarter // owns the single active Run; nil until wired
 }
 
 // New constructs a Server backed by the given UI file system. The ui argument
-// is the embedded static asset tree (index.html and friends).
+// is the embedded static asset tree (index.html and friends). The run manager
+// is attached separately via SetRunManager so this constructor keeps the
+// signature the skeleton slice (#35) introduced.
 func New(ui fs.FS) *Server {
 	return &Server{ui: ui}
+}
+
+// SetRunManager attaches the Run_Manager dependency used by POST /api/run.
+func (s *Server) SetRunManager(rm RunStarter) {
+	s.runs = rm
 }
 
 // Routes builds the http.ServeMux with every Console route registered. It is
@@ -50,6 +69,7 @@ func (s *Server) Routes() http.Handler {
 
 	// API surface.
 	mux.HandleFunc("GET /api/health", s.handleHealth)
+	mux.HandleFunc("POST /api/run", s.handleStartRun)
 	// Catch-all for any other /api/... path: JSON error shape, never HTML.
 	mux.HandleFunc("/api/", s.handleAPINotFound)
 
@@ -65,6 +85,68 @@ func (s *Server) Routes() http.Handler {
 // {"status":"ok"} as JSON.
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// startRunRequest is the POST /api/run request body.
+type startRunRequest struct {
+	Topic   string   `json:"topic"`
+	Outputs []string `json:"outputs"`
+}
+
+// handleStartRun implements Requirement 7: start a Run.
+//
+//   - 202 {"run_id": ...} on success
+//   - 409 when a Run is already active
+//   - 422 on an empty topic, invalid outputs, or a malformed body
+//   - 500 {"error":"spawn_failed","detail":...} when the runner fails to spawn
+//     (no run_id, no active Run)
+func (s *Server) handleStartRun(w http.ResponseWriter, r *http.Request) {
+	if s.runs == nil {
+		writeJSONError(w, http.StatusInternalServerError, "internal_error",
+			"Run manager is not configured.")
+		return
+	}
+
+	var body startRunRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		// A malformed body cannot describe a valid Run (Requirement 7.4).
+		writeJSONError(w, http.StatusUnprocessableEntity, "validation",
+			"Request body must be valid JSON.")
+		return
+	}
+
+	req := run.StartRequest{Topic: body.Topic, Outputs: body.Outputs}
+	// Validate at the HTTP boundary so invalid input returns 422 before the Run
+	// manager is involved (Requirement 7.4).
+	if err := run.ValidateStartRequest(req); err != nil {
+		writeJSONError(w, http.StatusUnprocessableEntity, "validation", err.Error())
+		return
+	}
+
+	handle, err := s.runs.Start(req)
+	if err != nil {
+		s.writeStartRunError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, map[string]string{"run_id": handle.RunID})
+}
+
+// writeStartRunError maps a Start error to the correct status and JSON shape.
+func (s *Server) writeStartRunError(w http.ResponseWriter, err error) {
+	var spawnErr *run.SpawnError
+	switch {
+	case errors.Is(err, run.ErrRunInProgress):
+		writeJSONError(w, http.StatusConflict, "conflict",
+			"A run is already in progress.")
+	case errors.Is(err, run.ErrEmptyTopic), errors.Is(err, run.ErrInvalidOutputs):
+		// Defensive: validation also runs at the boundary above.
+		writeJSONError(w, http.StatusUnprocessableEntity, "validation", err.Error())
+	case errors.As(err, &spawnErr):
+		writeJSONError(w, http.StatusInternalServerError, "spawn_failed", spawnErr.Err.Error())
+	default:
+		writeJSONError(w, http.StatusInternalServerError, "internal_error", err.Error())
+	}
 }
 
 // handleAPINotFound returns the JSON error shape for any unmatched API path.
