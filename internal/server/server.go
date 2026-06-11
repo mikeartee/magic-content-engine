@@ -17,9 +17,11 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"path/filepath"
 	"strconv"
 
 	"github.com/mikeartee/magic-content-engine/console/internal/run"
+	"github.com/mikeartee/magic-content-engine/console/internal/sse"
 )
 
 // LoopbackHost is the only interface the Console ever binds to. The listener is
@@ -41,20 +43,57 @@ type RunStarter interface {
 	Start(req run.StartRequest) (run.RunHandle, error)
 }
 
-// Server holds the dependencies needed to serve the Console. For this slice the
-// dependencies are the embedded UI file system and the run manager; later
-// slices add the SSE hub, file service, vault and dev.to publisher.
+// Server holds the dependencies needed to serve the Console: the embedded UI
+// file system, the run manager (POST /api/run), and the SSE hub plus run-output
+// root (GET /api/run/status). Later slices add the file service, vault, and
+// dev.to publisher.
 type Server struct {
-	ui   fs.FS      // embedded UI assets (rooted at the static directory)
-	runs RunStarter // owns the single active Run; nil until wired
+	ui        fs.FS      // embedded UI assets (rooted at the static directory)
+	runs      RunStarter // owns the single active Run; nil until wired
+	hub       *sse.Hub   // SSE hub: tails agent-log.jsonl with replay + dedup
+	outputDir string     // root holding output/<run_id>/ run directories
+	isActive  func(runID string) bool
 }
 
 // New constructs a Server backed by the given UI file system. The ui argument
-// is the embedded static asset tree (index.html and friends). The run manager
-// is attached separately via SetRunManager so this constructor keeps the
-// signature the skeleton slice (#35) introduced.
-func New(ui fs.FS) *Server {
-	return &Server{ui: ui}
+// is the embedded static asset tree (index.html and friends). The SSE hub, the
+// run-output root, and the active-run probe take sensible defaults that later
+// slices (the run manager) can override via the With* options. The run manager
+// is attached separately via SetRunManager so the skeleton signature (#35)
+// stays stable.
+func New(ui fs.FS, opts ...Option) *Server {
+	s := &Server{
+		ui:        ui,
+		hub:       sse.New(),
+		outputDir: "output",
+		// No run manager is wired yet, so no Run is ever considered active; the
+		// SSE stream replays the log then settles into its terminal frame.
+		isActive: func(string) bool { return false },
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+// Option configures a Server at construction time without changing the single
+// required argument of New (keeping callers and tests stable).
+type Option func(*Server)
+
+// WithOutputDir sets the root directory that holds output/<run_id>/ run
+// directories used to resolve the SSE log path.
+func WithOutputDir(dir string) Option {
+	return func(s *Server) { s.outputDir = dir }
+}
+
+// WithActiveProbe lets the run manager report whether a given run_id is still
+// active, so the SSE hub knows when to emit its terminal frame.
+func WithActiveProbe(fn func(runID string) bool) Option {
+	return func(s *Server) {
+		if fn != nil {
+			s.isActive = fn
+		}
+	}
 }
 
 // SetRunManager attaches the Run_Manager dependency used by POST /api/run.
@@ -70,6 +109,7 @@ func (s *Server) Routes() http.Handler {
 	// API surface.
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("POST /api/run", s.handleStartRun)
+	mux.HandleFunc("GET /api/run/status", s.handleRunStatus)
 	// Catch-all for any other /api/... path: JSON error shape, never HTML.
 	mux.HandleFunc("/api/", s.handleAPINotFound)
 
@@ -152,6 +192,20 @@ func (s *Server) writeStartRunError(w http.ResponseWriter, err error) {
 // handleAPINotFound returns the JSON error shape for any unmatched API path.
 func (s *Server) handleAPINotFound(w http.ResponseWriter, r *http.Request) {
 	writeJSONError(w, http.StatusNotFound, "not_found", "No such API endpoint: "+r.URL.Path)
+}
+
+// handleRunStatus implements Requirement 1: it streams a Run's agent log as
+// Server-Sent Events. The run_id query parameter selects the run directory
+// output/<run_id>/, whose agent-log.jsonl is the tail source (Requirement 1.5).
+// Replay, deduplication, headers, the synthetic terminal frame, missing-file
+// creation, and clean close on disconnect are all owned by the SSE hub.
+func (s *Server) handleRunStatus(w http.ResponseWriter, r *http.Request) {
+	runID := r.URL.Query().Get("run_id")
+	logPath := filepath.Join(s.outputDir, runID, "agent-log.jsonl")
+	isActive := func() bool { return s.isActive(runID) }
+	// Errors here (e.g. client disconnect) are expected; the hub already wrote
+	// the SSE headers, so there is no separate error response to send.
+	_ = s.hub.Stream(r.Context(), w, logPath, isActive)
 }
 
 // handleUI serves the embedded UI. The root path serves index.html; any other
