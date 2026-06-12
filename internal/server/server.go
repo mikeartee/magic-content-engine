@@ -46,6 +46,16 @@ type RunStarter interface {
 	Start(req run.StartRequest) (run.RunHandle, error)
 }
 
+// RunApprover is the slice of the Run_Manager the HTTP server depends on to
+// resolve an approval gate. Decide writes the decision file for the active Run
+// and returns run.ErrNoGate when no gate is awaiting a decision, which the
+// server maps to HTTP 409 (Requirement 2, 12.4). It is declared consumer-side
+// so handlers can be tested with a fake; nil until wired via SetRunManager when
+// the attached manager also satisfies this interface.
+type RunApprover interface {
+	Decide(approved bool) error
+}
+
 // FileService is the slice of the File_Service the HTTP server depends on to
 // back the run-bundle file API (Requirement 4). It is declared consumer-side so
 // the server stays decoupled from the concrete *files.Service and so handlers
@@ -74,6 +84,7 @@ type SuggestionService interface {
 type Server struct {
 	ui        fs.FS             // embedded UI assets (rooted at the static directory)
 	runs      RunStarter        // owns the single active Run; nil until wired
+	approver  RunApprover       // resolves the approval gate; nil until wired
 	hub       *sse.Hub          // SSE hub: tails agent-log.jsonl with replay + dedup
 	outputDir string            // root holding output/<run_id>/ run directories
 	files     FileService       // run-bundle file API; nil until wired
@@ -137,9 +148,14 @@ func WithSSETiming(poll time.Duration, idleTicks int) Option {
 	}
 }
 
-// SetRunManager attaches the Run_Manager dependency used by POST /api/run.
+// SetRunManager attaches the Run_Manager dependency used by POST /api/run. When
+// the attached manager also satisfies RunApprover (the concrete *run.Manager
+// does), it is wired for POST /api/run/approve and /api/run/reject as well.
 func (s *Server) SetRunManager(rm RunStarter) {
 	s.runs = rm
+	if a, ok := rm.(RunApprover); ok {
+		s.approver = a
+	}
 }
 
 // SetFileService attaches the File_Service dependency used by the run-bundle
@@ -165,6 +181,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("POST /api/run", s.handleStartRun)
 	mux.HandleFunc("GET /api/run/status", s.handleRunStatus)
+	mux.HandleFunc("POST /api/run/approve", s.handleApprove)
+	mux.HandleFunc("POST /api/run/reject", s.handleReject)
 	// Run-bundle file API (Requirement 4).
 	mux.HandleFunc("GET /api/runs", s.handleListRuns)
 	mux.HandleFunc("GET /api/runs/{id}/file", s.handleReadFile)
@@ -257,6 +275,45 @@ func (s *Server) writeStartRunError(w http.ResponseWriter, err error) {
 // handleAPINotFound returns the JSON error shape for any unmatched API path.
 func (s *Server) handleAPINotFound(w http.ResponseWriter, r *http.Request) {
 	writeJSONError(w, http.StatusNotFound, "not_found", "No such API endpoint: "+r.URL.Path)
+}
+
+// handleApprove implements POST /api/run/approve (Requirement 2, 12.3): it
+// records an approved decision for the active Run. With no gate awaiting a
+// decision it returns 409 (Requirement 12.4).
+func (s *Server) handleApprove(w http.ResponseWriter, _ *http.Request) {
+	s.decide(w, true)
+}
+
+// handleReject implements POST /api/run/reject (Requirement 2, 12.3): it records
+// a rejected decision for the active Run, retaining the files without
+// publishing. With no gate awaiting a decision it returns 409 (Requirement 12.4).
+func (s *Server) handleReject(w http.ResponseWriter, _ *http.Request) {
+	s.decide(w, false)
+}
+
+// decide writes the approval decision via the Run_Manager and maps the outcome
+// to the HTTP response: 200 on success, 409 when no gate is awaiting
+// (run.ErrNoGate), 500 otherwise.
+func (s *Server) decide(w http.ResponseWriter, approved bool) {
+	if s.approver == nil {
+		writeJSONError(w, http.StatusInternalServerError, "internal_error",
+			"Run manager is not configured.")
+		return
+	}
+	if err := s.approver.Decide(approved); err != nil {
+		if errors.Is(err, run.ErrNoGate) {
+			writeJSONError(w, http.StatusConflict, "conflict",
+				"No approval gate is currently waiting.")
+			return
+		}
+		writeJSONError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	decision := "rejected"
+	if approved {
+		decision = "approved"
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"decision": decision})
 }
 
 // handleRunStatus implements Requirement 1: it streams a Run's agent log as
