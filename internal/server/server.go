@@ -23,6 +23,7 @@ import (
 	"github.com/mikeartee/magic-content-engine/console/internal/files"
 	"github.com/mikeartee/magic-content-engine/console/internal/run"
 	"github.com/mikeartee/magic-content-engine/console/internal/sse"
+	"github.com/mikeartee/magic-content-engine/console/internal/vault"
 )
 
 // LoopbackHost is the only interface the Console ever binds to. The listener is
@@ -55,16 +56,27 @@ type FileService interface {
 	ResolveDownload(runID, name string) (string, error)
 }
 
+// SuggestionService is the slice of the Suggestion_Service the HTTP server
+// depends on to back the vault-only topic suggestions (Requirement 6). It is
+// declared consumer-side so the server stays decoupled from the concrete
+// *vault.Service and so handlers can be tested with a fake. nil until wired via
+// SetSuggestionService.
+type SuggestionService interface {
+	Recency(limit int) (vault.Suggestions, error)
+	Search(query string, limit int) (vault.Suggestions, error)
+}
+
 // Server holds the dependencies needed to serve the Console: the embedded UI
 // file system, the run manager (POST /api/run), and the SSE hub plus run-output
 // root (GET /api/run/status). Later slices add the file service, vault, and
 // dev.to publisher.
 type Server struct {
-	ui        fs.FS       // embedded UI assets (rooted at the static directory)
-	runs      RunStarter  // owns the single active Run; nil until wired
-	hub       *sse.Hub    // SSE hub: tails agent-log.jsonl with replay + dedup
-	outputDir string      // root holding output/<run_id>/ run directories
-	files     FileService // run-bundle file API; nil until wired
+	ui        fs.FS             // embedded UI assets (rooted at the static directory)
+	runs      RunStarter        // owns the single active Run; nil until wired
+	hub       *sse.Hub          // SSE hub: tails agent-log.jsonl with replay + dedup
+	outputDir string            // root holding output/<run_id>/ run directories
+	files     FileService       // run-bundle file API; nil until wired
+	vault     SuggestionService // vault-only topic suggestions; nil until wired
 	isActive  func(runID string) bool
 }
 
@@ -121,6 +133,13 @@ func (s *Server) SetFileService(fs FileService) {
 	s.files = fs
 }
 
+// SetSuggestionService attaches the Suggestion_Service dependency used by the
+// vault-only topic suggestions API (GET /api/suggestions and
+// GET /api/suggestions/search).
+func (s *Server) SetSuggestionService(vs SuggestionService) {
+	s.vault = vs
+}
+
 // Routes builds the http.ServeMux with every Console route registered. It is
 // the single place the URL surface is wired.
 func (s *Server) Routes() http.Handler {
@@ -135,6 +154,11 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/runs/{id}/file", s.handleReadFile)
 	mux.HandleFunc("POST /api/runs/{id}/file", s.handleSaveFile)
 	mux.HandleFunc("GET /api/runs/{id}/download/{file...}", s.handleDownloadFile)
+	// Vault-only topic suggestions (Requirement 6). The more specific search
+	// route is registered alongside the recency list; net/http's pattern matcher
+	// routes /api/suggestions/search to the search handler.
+	mux.HandleFunc("GET /api/suggestions", s.handleSuggestions)
+	mux.HandleFunc("GET /api/suggestions/search", s.handleSearchSuggestions)
 	// Catch-all for any other /api/... path: JSON error shape, never HTML.
 	mux.HandleFunc("/api/", s.handleAPINotFound)
 
@@ -348,6 +372,66 @@ func (s *Server) writeFileError(w http.ResponseWriter, err error) {
 	default:
 		writeJSONError(w, http.StatusInternalServerError, "internal_error", err.Error())
 	}
+}
+
+// suggestionServiceReady reports whether the suggestion service is wired and,
+// when not, writes the standard internal_error response (matching the file
+// API's fail-safe behaviour).
+func (s *Server) suggestionServiceReady(w http.ResponseWriter) bool {
+	if s.vault == nil {
+		writeJSONError(w, http.StatusInternalServerError, "internal_error",
+			"Suggestion service is not configured.")
+		return false
+	}
+	return true
+}
+
+// parseLimit reads the optional `limit` query parameter, returning 0 when it is
+// absent or malformed so the service applies its own default cap.
+func parseLimit(r *http.Request) int {
+	raw := r.URL.Query().Get("limit")
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+// handleSuggestions implements Requirement 6.2: GET /api/suggestions returns the
+// vault recency list as {"suggestions": [...]}. A missing vault yields an empty
+// list and a warning field, not an error (Requirement 6.5). No AWS call is made
+// (Requirement 6.1).
+func (s *Server) handleSuggestions(w http.ResponseWriter, r *http.Request) {
+	if !s.suggestionServiceReady(w) {
+		return
+	}
+	result, err := s.vault.Recency(parseLimit(r))
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// handleSearchSuggestions implements Requirement 6.4: GET
+// /api/suggestions/search?q= matches the query case-insensitively against the
+// derived title of every vault note and returns {"suggestions": [...]}. A
+// missing vault yields an empty list and a warning, not an error
+// (Requirement 6.5). No AWS call is made (Requirement 6.1).
+func (s *Server) handleSearchSuggestions(w http.ResponseWriter, r *http.Request) {
+	if !s.suggestionServiceReady(w) {
+		return
+	}
+	query := r.URL.Query().Get("q")
+	result, err := s.vault.Search(query, parseLimit(r))
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 // handleUI serves the embedded UI. The root path serves index.html; any other
