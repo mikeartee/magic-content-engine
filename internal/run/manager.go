@@ -83,6 +83,14 @@ type RunHandle struct {
 // error to exercise the spawn-failure path.
 type RunnerStarter func(cmd *exec.Cmd) error
 
+// RunnerWaiter blocks until the spawned runner exits. Production wiring passes
+// (*exec.Cmd).Wait so the Manager learns when a Run finishes and releases the
+// single-active slot; tests may inject their own. When no waiter is configured
+// the Manager never auto-completes a Run (the historical behaviour relied on by
+// the manager unit tests, which inject fake starters that never spawn a real
+// process).
+type RunnerWaiter func(cmd *exec.Cmd) error
+
 // DefaultStarter starts the subprocess for real. Production wiring uses this.
 func DefaultStarter(cmd *exec.Cmd) error { return cmd.Start() }
 
@@ -90,6 +98,7 @@ func DefaultStarter(cmd *exec.Cmd) error { return cmd.Start() }
 type Manager struct {
 	outputRoot string
 	starter    RunnerStarter
+	waiter     RunnerWaiter
 	python     string
 	script     string
 	idgen      func() string
@@ -113,6 +122,15 @@ func WithPython(python, script string) Option {
 		m.python = python
 		m.script = script
 	}
+}
+
+// WithCompletionWatch makes the Manager observe runner completion: after a
+// successful spawn it runs waiter(cmd) on a background goroutine and, when that
+// returns, marks the Run inactive so a new Run may start and the SSE hub can
+// emit its terminal frame. Production wires (*exec.Cmd).Wait. Without this
+// option the Manager never auto-completes a Run.
+func WithCompletionWatch(waiter RunnerWaiter) Option {
+	return func(m *Manager) { m.waiter = waiter }
 }
 
 // New constructs a Manager rooted at outputRoot (the parent of every
@@ -193,7 +211,27 @@ func (m *Manager) Start(req StartRequest) (RunHandle, error) {
 	}
 	m.active = true
 	m.handle = h
+
+	// When a completion watch is configured, learn of the runner's exit so the
+	// single-active slot is released and the SSE hub can settle into its
+	// terminal frame. The goroutine blocks on m.mu only briefly (after waiter
+	// returns), so launching it under the lock is safe.
+	if m.waiter != nil {
+		go m.awaitCompletion(runID, cmd)
+	}
 	return h, nil
+}
+
+// awaitCompletion blocks until the runner exits, then clears the active Run if
+// it is still the one identified by runID (a later Run must not be cancelled by
+// an earlier runner's exit).
+func (m *Manager) awaitCompletion(runID string, cmd *exec.Cmd) {
+	_ = m.waiter(cmd)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.active && m.handle.RunID == runID {
+		m.active = false
+	}
 }
 
 // Active returns the current RunHandle, or ok=false if no Run is active.

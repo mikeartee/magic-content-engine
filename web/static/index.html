@@ -5,27 +5,78 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bullpen Console</title>
   <style>
+    :root { color-scheme: dark; }
     body {
       font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
       margin: 0;
       background: #0f1419;
       color: #e6e6e6;
-      display: flex;
       min-height: 100vh;
-      align-items: center;
-      justify-content: center;
     }
-    main { text-align: center; padding: 2rem; }
-    h1 { margin: 0 0 0.5rem; font-size: 1.6rem; }
-    p { margin: 0.25rem 0; color: #9aa7b2; }
+    main { max-width: 760px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+    h1 { margin: 0 0 0.25rem; font-size: 1.6rem; }
+    .tagline { margin: 0 0 1.5rem; color: #9aa7b2; }
+    fieldset { border: 1px solid #243240; border-radius: 8px; padding: 1rem 1.25rem; margin: 0 0 1.25rem; }
+    legend { padding: 0 0.4rem; color: #9aa7b2; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    label { display: block; margin: 0 0 0.5rem; font-size: 0.95rem; }
+    input[type="text"] {
+      width: 100%; box-sizing: border-box; padding: 0.6rem 0.75rem;
+      background: #0b0f14; border: 1px solid #243240; border-radius: 6px;
+      color: #e6e6e6; font-size: 1rem;
+    }
+    .outputs { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.5rem; }
+    .outputs label { display: inline-flex; align-items: center; gap: 0.35rem; margin: 0; color: #cdd6df; }
+    button {
+      padding: 0.6rem 1.4rem; font-size: 1rem; font-weight: 600;
+      background: #2563eb; color: #fff; border: 0; border-radius: 6px; cursor: pointer;
+    }
+    button:disabled { background: #33415a; cursor: not-allowed; }
+    .status { margin: 1rem 0 0; min-height: 1.2rem; color: #9aa7b2; }
+    .status.error { color: #f08a8a; }
+    #timeline { list-style: none; margin: 1.25rem 0 0; padding: 0; }
+    #timeline li {
+      padding: 0.55rem 0.75rem; margin: 0 0 0.4rem; border-radius: 6px;
+      background: #131b24; border-left: 3px solid #2563eb; font-size: 0.92rem;
+    }
+    #timeline li .ts { color: #6b7785; font-variant-numeric: tabular-nums; margin-right: 0.5rem; }
+    #timeline li .agent { color: #6db3f2; font-weight: 600; }
+    #terminal {
+      display: none; margin-top: 1.25rem; padding: 0.85rem 1rem;
+      border-radius: 6px; background: #0e2a1a; border: 1px solid #1f5c39;
+      color: #7fe0a6; font-weight: 600;
+    }
+    #terminal.error { background: #2a0e0e; border-color: #5c1f1f; color: #f0a0a0; }
     code { color: #6db3f2; }
   </style>
 </head>
 <body>
   <main>
     <h1>Bullpen Console</h1>
-    <p>The Go Console is running on loopback.</p>
-    <p>Health: <code>GET /api/health</code></p>
+    <p class="tagline">Start a content pipeline Run and watch it stream live.</p>
+
+    <form id="run-form">
+      <fieldset>
+        <legend>New Run</legend>
+        <label for="topic">Topic</label>
+        <input type="text" id="topic" name="topic" placeholder="e.g. AgentCore in Sydney" autocomplete="off" required>
+        <div class="outputs" id="outputs">
+          <label><input type="checkbox" value="all" checked> all</label>
+          <label><input type="checkbox" value="blog"> blog</label>
+          <label><input type="checkbox" value="youtube"> youtube</label>
+          <label><input type="checkbox" value="cfp"> cfp</label>
+          <label><input type="checkbox" value="usergroup"> usergroup</label>
+          <label><input type="checkbox" value="digest"> digest</label>
+        </div>
+      </fieldset>
+      <button type="submit" id="run-btn">Run</button>
+    </form>
+
+    <p class="status" id="status" role="status" aria-live="polite"></p>
+
+    <ul id="timeline" aria-live="polite"></ul>
+    <div id="terminal" role="status" aria-live="polite"></div>
   </main>
+
+  <script src="/static/app.js"></script>
 </body>
 </html>
