@@ -60,6 +60,14 @@ func argValue(argv []string, flag string) string {
 // dir is the per-run directory passed by the manager as --output-dir, i.e.
 // output/<run_id>/, which is exactly where the SSE hub tails agent-log.jsonl.
 func runStubRunner(argv []string, dir string) {
+	// A gate-flavoured topic switches the stub into the approval-gate flow: it
+	// presents a gate, polls approval-decision.json with the same read-and-delete
+	// semantics as the real Python poller, then resumes (approve) or retains
+	// (reject). This drives the #43 approval-gate end-to-end tests.
+	if strings.Contains(argValue(argv, "--topic"), "gate") {
+		runStubGateRunner(argv, dir)
+		return
+	}
 	runID := argValue(argv, "--run-id")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		os.Exit(1)

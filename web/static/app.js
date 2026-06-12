@@ -21,6 +21,10 @@
   var statusEl = document.getElementById("status");
   var timelineEl = document.getElementById("timeline");
   var terminalEl = document.getElementById("terminal");
+  var approvalEl = document.getElementById("approval");
+  var approvalFilesEl = document.getElementById("approval-files");
+  var approveBtn = document.getElementById("approve-btn");
+  var rejectBtn = document.getElementById("reject-btn");
 
   var source = null;
   // Dedup set keyed by timestamp|event_type|agent_type — the exact DedupKey the
@@ -57,6 +61,56 @@
     timelineEl.innerHTML = "";
     terminalEl.style.display = "none";
     terminalEl.className = "";
+    hideApproval();
+  }
+
+  // showApproval renders the Gate-presented state: the list of files pending
+  // approval and the Approve/Reject controls. Driven by the
+  // approval_gate_presented event (Requirement 3.3).
+  function showApproval(ev) {
+    var details = (ev && ev.details) || {};
+    var pending = details.files_pending_approval || [];
+    approvalFilesEl.innerHTML = "";
+    pending.forEach(function (name) {
+      var li = document.createElement("li");
+      li.textContent = name;
+      approvalFilesEl.appendChild(li);
+    });
+    approveBtn.disabled = false;
+    rejectBtn.disabled = false;
+    approvalEl.style.display = "block";
+  }
+
+  function hideApproval() {
+    approvalEl.style.display = "none";
+  }
+
+  // decide POSTs the human decision to the Console, which writes
+  // approval-decision.json for the Python poller to consume (Requirement 2).
+  function decide(approved) {
+    approveBtn.disabled = true;
+    rejectBtn.disabled = true;
+    var path = approved ? "/api/run/approve" : "/api/run/reject";
+    fetch(path, { method: "POST", headers: { "Content-Type": "application/json" } })
+      .then(function (resp) {
+        if (resp.status === 200) {
+          hideApproval();
+          setStatus(approved ? "Approved. Publishing..." : "Rejected. Files retained.");
+          return;
+        }
+        approveBtn.disabled = false;
+        rejectBtn.disabled = false;
+        if (resp.status === 409) {
+          setStatus("No approval gate is currently waiting.", true);
+        } else {
+          setStatus("Could not record the decision.", true);
+        }
+      })
+      .catch(function () {
+        approveBtn.disabled = false;
+        rejectBtn.disabled = false;
+        setStatus("Could not reach the Console to record the decision.", true);
+      });
   }
 
   // appendEvent renders one agent event, suppressing duplicates by DedupKey.
@@ -78,12 +132,22 @@
     li.appendChild(agent);
     li.appendChild(label);
     timelineEl.appendChild(li);
+
+    // Entering the Gate-presented state surfaces the Approve/Reject controls.
+    if (ev.event_type === "approval_gate_presented") {
+      showApproval(ev);
+    }
+    // Any resolving event closes the gate UI.
+    if (ev.event_type === "approval_decision" || ev.event_type === "approval_rejected") {
+      hideApproval();
+    }
   }
 
   // showTerminal renders the single terminal frame and closes the stream.
   function showTerminal(payload) {
     if (terminalShown) { return; }
     terminalShown = true;
+    hideApproval();
     var status = (payload && payload.status) || "complete";
     var isError = status === "error";
     terminalEl.textContent = isError ? "Run finished with errors." : "Run complete.";
@@ -174,4 +238,7 @@
     }
     startRun(topic, outputs);
   });
+
+  approveBtn.addEventListener("click", function () { decide(true); });
+  rejectBtn.addEventListener("click", function () { decide(false); });
 })();
