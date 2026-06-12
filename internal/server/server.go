@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/mikeartee/magic-content-engine/console/internal/files"
 	"github.com/mikeartee/magic-content-engine/console/internal/run"
 	"github.com/mikeartee/magic-content-engine/console/internal/sse"
 )
@@ -43,15 +44,27 @@ type RunStarter interface {
 	Start(req run.StartRequest) (run.RunHandle, error)
 }
 
+// FileService is the slice of the File_Service the HTTP server depends on to
+// back the run-bundle file API (Requirement 4). It is declared consumer-side so
+// the server stays decoupled from the concrete *files.Service and so handlers
+// can be tested with a fake. nil until wired via SetFileService.
+type FileService interface {
+	ListRuns() ([]files.RunListing, error)
+	ReadFile(runID, name string) ([]byte, error)
+	SaveFile(runID, name string, content []byte) error
+	ResolveDownload(runID, name string) (string, error)
+}
+
 // Server holds the dependencies needed to serve the Console: the embedded UI
 // file system, the run manager (POST /api/run), and the SSE hub plus run-output
 // root (GET /api/run/status). Later slices add the file service, vault, and
 // dev.to publisher.
 type Server struct {
-	ui        fs.FS      // embedded UI assets (rooted at the static directory)
-	runs      RunStarter // owns the single active Run; nil until wired
-	hub       *sse.Hub   // SSE hub: tails agent-log.jsonl with replay + dedup
-	outputDir string     // root holding output/<run_id>/ run directories
+	ui        fs.FS       // embedded UI assets (rooted at the static directory)
+	runs      RunStarter  // owns the single active Run; nil until wired
+	hub       *sse.Hub    // SSE hub: tails agent-log.jsonl with replay + dedup
+	outputDir string      // root holding output/<run_id>/ run directories
+	files     FileService // run-bundle file API; nil until wired
 	isActive  func(runID string) bool
 }
 
@@ -101,6 +114,13 @@ func (s *Server) SetRunManager(rm RunStarter) {
 	s.runs = rm
 }
 
+// SetFileService attaches the File_Service dependency used by the run-bundle
+// file API (GET /api/runs, GET/POST /api/runs/{id}/file, and
+// GET /api/runs/{id}/download/{file}).
+func (s *Server) SetFileService(fs FileService) {
+	s.files = fs
+}
+
 // Routes builds the http.ServeMux with every Console route registered. It is
 // the single place the URL surface is wired.
 func (s *Server) Routes() http.Handler {
@@ -110,6 +130,11 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("POST /api/run", s.handleStartRun)
 	mux.HandleFunc("GET /api/run/status", s.handleRunStatus)
+	// Run-bundle file API (Requirement 4).
+	mux.HandleFunc("GET /api/runs", s.handleListRuns)
+	mux.HandleFunc("GET /api/runs/{id}/file", s.handleReadFile)
+	mux.HandleFunc("POST /api/runs/{id}/file", s.handleSaveFile)
+	mux.HandleFunc("GET /api/runs/{id}/download/{file...}", s.handleDownloadFile)
 	// Catch-all for any other /api/... path: JSON error shape, never HTML.
 	mux.HandleFunc("/api/", s.handleAPINotFound)
 
@@ -206,6 +231,123 @@ func (s *Server) handleRunStatus(w http.ResponseWriter, r *http.Request) {
 	// Errors here (e.g. client disconnect) are expected; the hub already wrote
 	// the SSE headers, so there is no separate error response to send.
 	_ = s.hub.Stream(r.Context(), w, logPath, isActive)
+}
+
+// fileServiceReady reports whether the file service is wired and, when not,
+// writes the standard internal_error response.
+func (s *Server) fileServiceReady(w http.ResponseWriter) bool {
+	if s.files == nil {
+		writeJSONError(w, http.StatusInternalServerError, "internal_error",
+			"File service is not configured.")
+		return false
+	}
+	return true
+}
+
+// handleListRuns implements Requirement 4.2: GET /api/runs lists run
+// directories one level deep, with agent-log.jsonl and checkpoints.json
+// excluded. A missing output directory yields an empty list, not an error.
+func (s *Server) handleListRuns(w http.ResponseWriter, _ *http.Request) {
+	if !s.fileServiceReady(w) {
+		return
+	}
+	runs, err := s.files.ListRuns()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"runs": runs})
+}
+
+// handleReadFile implements Requirement 4.3: GET /api/runs/{id}/file?name=
+// returns the file content. The name may include a single subdirectory segment.
+// A traversal name is rejected with 403 forbidden (Requirement 4.1).
+func (s *Server) handleReadFile(w http.ResponseWriter, r *http.Request) {
+	if !s.fileServiceReady(w) {
+		return
+	}
+	runID := r.PathValue("id")
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		writeJSONError(w, http.StatusBadRequest, "missing_parameter", "name is required")
+		return
+	}
+	content, err := s.files.ReadFile(runID, name)
+	if err != nil {
+		s.writeFileError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(content)
+}
+
+// saveFileRequest is the POST /api/runs/{id}/file request body.
+type saveFileRequest struct {
+	Name    string `json:"name"`
+	Content string `json:"content"`
+}
+
+// handleSaveFile implements Requirement 4.4: POST /api/runs/{id}/file saves the
+// file atomically (temp write + rename). An empty name or content is a 422; a
+// traversal name is rejected with 403 forbidden (Requirement 4.1).
+func (s *Server) handleSaveFile(w http.ResponseWriter, r *http.Request) {
+	if !s.fileServiceReady(w) {
+		return
+	}
+	runID := r.PathValue("id")
+	var body saveFileRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSONError(w, http.StatusUnprocessableEntity, "validation",
+			"Request body must be valid JSON.")
+		return
+	}
+	if body.Name == "" {
+		writeJSONError(w, http.StatusUnprocessableEntity, "validation", "name is required")
+		return
+	}
+	if body.Content == "" {
+		writeJSONError(w, http.StatusUnprocessableEntity, "validation", "content must be non-empty")
+		return
+	}
+	if err := s.files.SaveFile(runID, body.Name, []byte(body.Content)); err != nil {
+		s.writeFileError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"saved": true})
+}
+
+// handleDownloadFile implements Requirement 4.5: GET
+// /api/runs/{id}/download/{file} serves the file content with a
+// Content-Disposition: attachment header. A traversal name is rejected with 403
+// forbidden (Requirement 4.1).
+func (s *Server) handleDownloadFile(w http.ResponseWriter, r *http.Request) {
+	if !s.fileServiceReady(w) {
+		return
+	}
+	runID := r.PathValue("id")
+	name := r.PathValue("file")
+	path, err := s.files.ResolveDownload(runID, name)
+	if err != nil {
+		s.writeFileError(w, err)
+		return
+	}
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filepath.Base(path)+"\"")
+	http.ServeFile(w, r, path)
+}
+
+// writeFileError maps a File_Service error to the correct status and JSON shape:
+// ErrForbidden -> 403 forbidden (Requirement 4.1), ErrNotFound -> 404, anything
+// else -> 500.
+func (s *Server) writeFileError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, files.ErrForbidden):
+		writeJSONError(w, http.StatusForbidden, "forbidden", "path traversal detected")
+	case errors.Is(err, files.ErrNotFound):
+		writeJSONError(w, http.StatusNotFound, "not_found", "file not found")
+	default:
+		writeJSONError(w, http.StatusInternalServerError, "internal_error", err.Error())
+	}
 }
 
 // handleUI serves the embedded UI. The root path serves index.html; any other
