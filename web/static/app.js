@@ -42,6 +42,20 @@
   var escalatedEl = document.getElementById("escalated");
   var escalatedFilesEl = document.getElementById("escalated-files");
 
+  // Topic Ideas panel (#51, Requirement 6). On load it fills from the vault
+  // recency list (GET /api/suggestions); the search box queries
+  // GET /api/suggestions/search?q=. Clicking a suggestion pre-fills the Run
+  // topic input. A missing/empty vault surfaces the API's `warning` text, never
+  // an error. No AWS call is involved: both endpoints are vault-only.
+  var ideasSearch = document.getElementById("ideas-search");
+  var ideasWarning = document.getElementById("ideas-warning");
+  var ideasList = document.getElementById("ideas-list");
+  var ideasEmpty = document.getElementById("ideas-empty");
+  var ideasSearchTimer = null;
+  // ideasReqSeq guards against out-of-order responses: only the newest request
+  // is allowed to render, so a slow recency load cannot clobber a later search.
+  var ideasReqSeq = 0;
+
   var source = null;
   // Dedup set keyed by timestamp|event_type|agent_type — the exact DedupKey the
   // server uses — so replayed events never double-render in the timeline.
@@ -354,4 +368,124 @@
 
   approveBtn.addEventListener("click", function () { decide(true); });
   rejectBtn.addEventListener("click", function () { decide(false); });
+
+  // ----- Topic Ideas panel (#51, Requirement 6) -----
+
+  // setIdeasWarning shows or clears the API-provided warning text (e.g. a
+  // missing vault). An empty/absent warning hides the banner entirely.
+  function setIdeasWarning(text) {
+    if (text) {
+      ideasWarning.textContent = text;
+      ideasWarning.style.display = "block";
+    } else {
+      ideasWarning.textContent = "";
+      ideasWarning.style.display = "none";
+    }
+  }
+
+  // suggestionMeta builds the right-hand label from the suggestion's
+  // last_covered date and days_since count, when present.
+  function suggestionMeta(s) {
+    var parts = [];
+    if (s.last_covered) { parts.push(s.last_covered); }
+    if (typeof s.days_since === "number") {
+      parts.push(s.days_since === 1 ? "1 day ago" : s.days_since + " days ago");
+    }
+    return parts.join(" · ");
+  }
+
+  // renderSuggestions paints the list of suggestions. Each row is a button so it
+  // is keyboard-focusable; clicking it fills the Run topic input.
+  function renderSuggestions(items) {
+    ideasList.innerHTML = "";
+    items.forEach(function (s) {
+      var li = document.createElement("li");
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "idea";
+
+      var topic = document.createElement("span");
+      topic.className = "idea-topic";
+      topic.textContent = s.topic || "(untitled)";
+      btn.appendChild(topic);
+
+      var metaText = suggestionMeta(s);
+      if (metaText) {
+        var meta = document.createElement("span");
+        meta.className = "idea-meta";
+        meta.textContent = metaText;
+        btn.appendChild(meta);
+      }
+
+      btn.addEventListener("click", function () { fillTopic(s.topic || ""); });
+      li.appendChild(btn);
+      ideasList.appendChild(li);
+    });
+  }
+
+  // fillTopic pre-fills the free-text Run topic field with the chosen
+  // suggestion (Requirement 6.7) and moves focus there so the user can edit it.
+  function fillTopic(topic) {
+    topicInput.value = topic;
+    topicInput.focus();
+  }
+
+  // applySuggestions renders the body of a /api/suggestions(/search) response:
+  // the warning (if any) and the suggestion list. emptyMsg shows when there are
+  // no items and no warning to explain the emptiness.
+  function applySuggestions(data, emptyMsg) {
+    data = data || {};
+    setIdeasWarning(data.warning || "");
+    var items = data.suggestions || [];
+    renderSuggestions(items);
+    ideasEmpty.textContent = (items.length === 0 && !data.warning) ? emptyMsg : "";
+  }
+
+  // loadSuggestions fetches a recency or search result and renders it. A network
+  // failure shows a small inline note rather than throwing; the API itself never
+  // errors for a missing vault (it returns a warning instead).
+  function loadSuggestions(url, emptyMsg) {
+    var seq = ++ideasReqSeq;
+    fetch(url)
+      .then(function (resp) { return resp.json(); })
+      .then(function (data) {
+        if (seq !== ideasReqSeq) { return; } // a newer request superseded us
+        applySuggestions(data, emptyMsg);
+      })
+      .catch(function () {
+        if (seq !== ideasReqSeq) { return; }
+        setIdeasWarning("");
+        ideasList.innerHTML = "";
+        ideasEmpty.textContent = "Could not load topic ideas.";
+      });
+  }
+
+  function loadRecency() {
+    loadSuggestions("/api/suggestions", "No topic ideas yet.");
+  }
+
+  function runSearch(query) {
+    loadSuggestions("/api/suggestions/search?q=" + encodeURIComponent(query), "No matching topics.");
+  }
+
+  ideasSearch.addEventListener("input", function () {
+    var query = ideasSearch.value.trim();
+    if (ideasSearchTimer) { clearTimeout(ideasSearchTimer); }
+    // Debounce keystrokes; an empty box returns to the recency list.
+    ideasSearchTimer = setTimeout(function () {
+      if (query === "") { loadRecency(); } else { runSearch(query); }
+    }, 250);
+  });
+
+  // Submitting the search box (Enter) runs the query immediately.
+  ideasSearch.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter") { return; }
+    e.preventDefault();
+    if (ideasSearchTimer) { clearTimeout(ideasSearchTimer); }
+    var query = ideasSearch.value.trim();
+    if (query === "") { loadRecency(); } else { runSearch(query); }
+  });
+
+  // Populate the recency list on load (Requirement 6.2).
+  loadRecency();
 })();
