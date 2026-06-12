@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/mikeartee/magic-content-engine/console/internal/devto"
 	"github.com/mikeartee/magic-content-engine/console/internal/files"
 	"github.com/mikeartee/magic-content-engine/console/internal/run"
 	"github.com/mikeartee/magic-content-engine/console/internal/sse"
@@ -77,6 +78,14 @@ type SuggestionService interface {
 	Search(query string, limit int) (vault.Suggestions, error)
 }
 
+// DevtoPublisher is the slice of the Devto_Publisher the HTTP server depends on
+// to back POST /api/publish/devto (Requirement 8). It is declared consumer-side
+// so the server stays decoupled from the concrete *devto.Publisher and so
+// handlers can be tested with a fake. nil until wired via SetDevtoPublisher.
+type DevtoPublisher interface {
+	Publish(runID string, req devto.DevtoRequest) (devto.DevtoResult, error)
+}
+
 // Server holds the dependencies needed to serve the Console: the embedded UI
 // file system, the run manager (POST /api/run), and the SSE hub plus run-output
 // root (GET /api/run/status). Later slices add the file service, vault, and
@@ -89,6 +98,7 @@ type Server struct {
 	outputDir string            // root holding output/<run_id>/ run directories
 	files     FileService       // run-bundle file API; nil until wired
 	vault     SuggestionService // vault-only topic suggestions; nil until wired
+	devto     DevtoPublisher    // dev.to publisher; nil until wired
 	isActive  func(runID string) bool
 }
 
@@ -172,6 +182,12 @@ func (s *Server) SetSuggestionService(vs SuggestionService) {
 	s.vault = vs
 }
 
+// SetDevtoPublisher attaches the Devto_Publisher dependency used by
+// POST /api/publish/devto (Requirement 8).
+func (s *Server) SetDevtoPublisher(dp DevtoPublisher) {
+	s.devto = dp
+}
+
 // Routes builds the http.ServeMux with every Console route registered. It is
 // the single place the URL surface is wired.
 func (s *Server) Routes() http.Handler {
@@ -193,6 +209,8 @@ func (s *Server) Routes() http.Handler {
 	// routes /api/suggestions/search to the search handler.
 	mux.HandleFunc("GET /api/suggestions", s.handleSuggestions)
 	mux.HandleFunc("GET /api/suggestions/search", s.handleSearchSuggestions)
+	// dev.to publishing (Requirement 8): locate post.md and POST to dev.to.
+	mux.HandleFunc("POST /api/publish/devto", s.handlePublishDevto)
 	// Catch-all for any other /api/... path: JSON error shape, never HTML.
 	mux.HandleFunc("/api/", s.handleAPINotFound)
 
@@ -505,6 +523,67 @@ func (s *Server) handleSearchSuggestions(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+// publishDevtoRequest is the POST /api/publish/devto request body. body_markdown
+// is not part of it: the publisher reads it from the located post.md.
+type publishDevtoRequest struct {
+	RunID     string   `json:"run_id"`
+	Title     string   `json:"title"`
+	Tags      []string `json:"tags"`
+	Published bool     `json:"published"`
+}
+
+// handlePublishDevto implements Requirement 8: publish a Run's post.md to
+// dev.to. It maps the publisher outcome to HTTP:
+//
+//   - success            -> 201 {success:true, url, id}
+//   - non-201 upstream   -> 502 {success:false, status_code, error} (Req 8.4)
+//   - network failure    -> 502 {success:false, error}              (Req 8.5)
+//   - post.md not found  -> 404 {"error":"not_found", ...}          (Req 8.1)
+//   - DEVTO_API_KEY unset -> 400 {"error":"missing_api_key", ...}    (Req 8.6)
+//
+// The api-key never appears in any response or log this handler produces.
+func (s *Server) handlePublishDevto(w http.ResponseWriter, r *http.Request) {
+	if s.devto == nil {
+		writeJSONError(w, http.StatusInternalServerError, "internal_error",
+			"dev.to publisher is not configured.")
+		return
+	}
+
+	var body publishDevtoRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSONError(w, http.StatusUnprocessableEntity, "validation",
+			"Request body must be valid JSON.")
+		return
+	}
+
+	result, err := s.devto.Publish(body.RunID, devto.DevtoRequest{
+		Title:     body.Title,
+		Tags:      body.Tags,
+		Published: body.Published,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, devto.ErrPostNotFound):
+			writeJSONError(w, http.StatusNotFound, "not_found",
+				"post.md not found for run "+body.RunID)
+		case errors.Is(err, devto.ErrMissingAPIKey):
+			writeJSONError(w, http.StatusBadRequest, "missing_api_key",
+				"DEVTO_API_KEY is not set.")
+		default:
+			writeJSONError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		}
+		return
+	}
+
+	if result.Success {
+		writeJSON(w, http.StatusCreated, result)
+		return
+	}
+	// Both a non-201 upstream status and a network failure surface as 502
+	// (Requirement 8.4, 8.5; design Scenario 7).
+	writeJSON(w, http.StatusBadGateway, result)
 }
 
 // handleUI serves the embedded UI. The root path serves index.html; any other
