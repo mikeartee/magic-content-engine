@@ -64,8 +64,17 @@ func runStubRunner(argv []string, dir string) {
 	// presents a gate, polls approval-decision.json with the same read-and-delete
 	// semantics as the real Python poller, then resumes (approve) or retains
 	// (reject). This drives the #43 approval-gate end-to-end tests.
-	if strings.Contains(argValue(argv, "--topic"), "gate") {
+	topic := argValue(argv, "--topic")
+	if strings.Contains(topic, "gate") {
 		runStubGateRunner(argv, dir)
+		return
+	}
+	// Terminal-state stubs (Requirement 3): escalation, errored-by-event, and
+	// errored-by-nonzero-exit-with-no-event.
+	if strings.Contains(topic, "escalate") ||
+		strings.Contains(topic, "error-event") ||
+		strings.Contains(topic, "error-exit") {
+		runStubTerminalRunner(argv, dir)
 		return
 	}
 	runID := argValue(argv, "--run-id")
