@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/mikeartee/magic-content-engine/console/internal/desktop"
+	"github.com/mikeartee/magic-content-engine/console/internal/devto"
 	"github.com/mikeartee/magic-content-engine/console/internal/files"
 	"github.com/mikeartee/magic-content-engine/console/internal/run"
 	"github.com/mikeartee/magic-content-engine/console/internal/server"
@@ -58,6 +59,7 @@ func main() {
 	srv.SetRunManager(rm)
 	srv.SetFileService(files.New(outputRoot))
 	srv.SetSuggestionService(vault.New())
+	srv.SetDevtoPublisher(devto.New(outputRoot))
 	addr := server.ListenAddr(chosen)
 
 	// Bind the chosen port up front so the actual listening address is known
