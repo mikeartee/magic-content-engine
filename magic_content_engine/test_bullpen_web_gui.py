@@ -459,6 +459,12 @@ def _make_client_error(code: str = "ResourceNotFoundException", message: str = "
 
 
 class TestSuggestionsDynamoDBFailure:
+    @pytest.fixture(autouse=True)
+    def _no_vault(self, monkeypatch, tmp_path):
+        """Point VAULT_PATH at an empty temp dir so vault extraction
+        returns no suggestions and the DynamoDB fallback is exercised."""
+        monkeypatch.setenv("VAULT_PATH", str(tmp_path / "empty-vault"))
+
     def test_dynamodb_client_error_returns_200(self, client):
         with patch.object(app_module, "boto3") as mock_boto3:
             mock_table = MagicMock()

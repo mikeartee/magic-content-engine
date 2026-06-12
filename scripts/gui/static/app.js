@@ -21,6 +21,9 @@ let currentFileName = '';
 /** True once the current run's files have been auto-loaded once. Prevents re-loading. */
 let reviewAutoLoaded = false;
 
+/** Set of already-seen SSE event keys to dedupe replayed events on reconnect. */
+const seenEventKeys = new Set();
+
 // ============================================================
 // Utility functions
 // ============================================================
@@ -175,8 +178,10 @@ function resetProgressView() {
   document.getElementById('approval-actions').classList.add('hidden');
   document.getElementById('approve-btn').disabled = false;
   document.getElementById('reject-btn').disabled = false;
-  // New run — reset the Review auto-load gate so this run gets populated
+  // New run. Reset the Review auto-load gate so this run gets populated.
   reviewAutoLoaded = false;
+  // New run. Clear the SSE event dedup set.
+  seenEventKeys.clear();
 }
 
 /**
@@ -313,9 +318,30 @@ function onPipelineComplete(event) {
 }
 
 /**
+ * Build a stable dedup key for an SSE event.
+ * Events are uniquely identified by their timestamp + event_type + agent_type.
+ * On EventSource reconnect, the server replays from the start of the log,
+ * so we drop any event whose key we have already processed.
+ */
+function eventKey(event) {
+  return [
+    event.timestamp || '',
+    event.event_type || '',
+    event.agent_type || '',
+  ].join('|');
+}
+
+/**
  * Dispatch a pipeline event to the appropriate handler.
+ * Deduplicates replayed events by key so reconnects don't double-append.
  */
 function handlePipelineEvent(event) {
+  const key = eventKey(event);
+  if (key && seenEventKeys.has(key)) {
+    return;  // Already processed. Ignore silently (reconnect replay).
+  }
+  if (key) seenEventKeys.add(key);
+
   switch (event.event_type) {
     case 'agent_invoked':
       markAgentActive(event.agent_type);
