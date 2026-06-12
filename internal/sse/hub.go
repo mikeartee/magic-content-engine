@@ -19,9 +19,17 @@ const (
 	defaultIdleTicksLimit = 2
 )
 
-// terminalFrame is the single synthetic completion frame emitted once the Run
-// is inactive and the log is idle (Requirement 1.7).
-const terminalFrame = "event: pipeline_complete\ndata: {\"status\":\"complete\"}\n\n"
+// terminalFrameFor builds the single synthetic completion frame emitted once
+// the Run is inactive and the log is idle (Requirement 1.7). The default status
+// is "complete"; the reconciled status (Requirement 3) is substituted when a
+// resolver is supplied to Stream, so the client renders exactly one of the
+// three terminal states (Requirement 3.2).
+func terminalFrameFor(status string) string {
+	if status == "" {
+		status = "complete"
+	}
+	return "event: pipeline_complete\ndata: {\"status\":\"" + status + "\"}\n\n"
+}
 
 // Hub tails agent-log.jsonl and streams events as Server-Sent Events. The zero
 // value is usable and applies production defaults; tests may set PollInterval
@@ -45,7 +53,12 @@ func New() *Hub { return &Hub{} }
 // the full timeline, and deduplicates by LogEvent.DedupKey so replayed events
 // never double-render. If logPath does not exist it is created empty before
 // tailing so the stream never errors on a not-yet-started Run.
-func (h *Hub) Stream(ctx context.Context, w http.ResponseWriter, logPath string, isActive func() bool) error {
+//
+// An optional terminalStatus resolver supplies the reconciled terminal status
+// (Requirement 3): when the synthetic terminal frame is emitted it is consulted
+// so the frame carries "complete", "escalated", or "error". A nil resolver, or
+// one returning "", keeps the default "complete" frame.
+func (h *Hub) Stream(ctx context.Context, w http.ResponseWriter, logPath string, isActive func() bool, terminalStatus ...func() string) error {
 	poll := h.PollInterval
 	if poll <= 0 {
 		poll = defaultPollInterval
@@ -96,8 +109,14 @@ func (h *Hub) Stream(ctx context.Context, w http.ResponseWriter, logPath string,
 			if !isActive() {
 				idleTicks++
 				if idleTicks >= idleLimit {
-					// Requirement 1.7: exactly one synthetic terminal frame.
-					_, _ = io.WriteString(w, terminalFrame)
+					// Requirement 1.7 / 3.2: exactly one synthetic terminal
+					// frame, carrying the reconciled terminal status when a
+					// resolver is supplied (Requirement 3).
+					status := ""
+					if len(terminalStatus) > 0 && terminalStatus[0] != nil {
+						status = terminalStatus[0]()
+					}
+					_, _ = io.WriteString(w, terminalFrameFor(status))
 					flush()
 					return nil
 				}

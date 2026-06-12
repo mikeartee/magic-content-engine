@@ -1,15 +1,29 @@
-// Bullpen Console client logic for the end-to-end Run (slice #40, Requirements
-// 1, 7, 10). Clicking Run POSTs /api/run, then opens an SSE stream at
-// /api/run/status?run_id=... and renders each agent event exactly once. A
-// browser refresh re-opens the stream; the server replays the whole timeline
-// from offset 0, and the dedup set below guarantees each event still renders
-// once. The synthetic `pipeline_complete` event is shown as the single terminal
-// frame.
+// Bullpen Console client logic. Clicking Run POSTs /api/run, then opens an SSE
+// stream at /api/run/status?run_id=... and renders each agent event exactly
+// once (slice #40, Requirements 1, 7, 10). The gate controls land in slice #43
+// (Requirement 2). This slice (#45, Requirement 3) makes the client settle into
+// EXACTLY ONE of three terminal states and render nothing after it:
+//
+//   - Gate presented : approval_gate_presented seen, files pending approval
+//                      listed with Approve/Reject controls.
+//   - Escalated      : no publish verdict and one or more file_escalated events;
+//                      a manual-review message lists each file and its reason.
+//   - Errored        : an agent_error halt, a pipeline_complete of status
+//                      error/halted, OR a nonzero subprocess exit reconciled
+//                      server-side into a terminal frame of status "error"; the
+//                      failing step and message are shown.
+//
+// The single synthetic `pipeline_complete` terminal frame carries the
+// server-reconciled status ("complete" | "escalated" | "error"). The
+// terminalShown guard plus the DedupKey set guarantee exactly one terminal
+// frame even across a browser refresh (replay + dedup from #40).
 //
 // There is no JS unit-test harness in this repo; this client is covered at the
-// Go integration layer by TestEndToEndRunSpawnsRunnerAndStreamsEvents, which
-// drives POST /api/run -> stub runner -> SSE stream and asserts single-render,
-// refresh-replay-without-duplication, and a single terminal frame.
+// Go integration layer (TestEndToEndRunSpawnsRunnerAndStreamsEvents,
+// TestEndToEndApprovalGate*, and the #45 terminal-state e2e tests), which drive
+// POST /api/run -> stub runner -> SSE stream and assert single-render,
+// refresh-replay-without-duplication, and a single terminal frame of the
+// correct kind.
 
 (function () {
   "use strict";
@@ -25,12 +39,20 @@
   var approvalFilesEl = document.getElementById("approval-files");
   var approveBtn = document.getElementById("approve-btn");
   var rejectBtn = document.getElementById("reject-btn");
+  var escalatedEl = document.getElementById("escalated");
+  var escalatedFilesEl = document.getElementById("escalated-files");
 
   var source = null;
   // Dedup set keyed by timestamp|event_type|agent_type — the exact DedupKey the
   // server uses — so replayed events never double-render in the timeline.
   var rendered = Object.create(null);
   var terminalShown = false;
+
+  // Accumulated terminal-state signals, derived from the event stream so the
+  // single terminal frame can be rendered as exactly one of the three states.
+  var publishVerdictSeen = false;     // a verdict event with verdict "publish"
+  var escalatedFiles = [];            // [{filename, reason}] from file_escalated
+  var errorInfo = null;               // {step, message} from agent_error / error complete
 
   function setStatus(message, isError) {
     statusEl.textContent = message;
@@ -58,9 +80,15 @@
   function resetTimeline() {
     rendered = Object.create(null);
     terminalShown = false;
+    publishVerdictSeen = false;
+    escalatedFiles = [];
+    errorInfo = null;
     timelineEl.innerHTML = "";
     terminalEl.style.display = "none";
     terminalEl.className = "";
+    terminalEl.textContent = "";
+    escalatedEl.style.display = "none";
+    escalatedFilesEl.innerHTML = "";
     hideApproval();
   }
 
@@ -113,7 +141,8 @@
       });
   }
 
-  // appendEvent renders one agent event, suppressing duplicates by DedupKey.
+  // appendEvent renders one agent event, suppressing duplicates by DedupKey, and
+  // accumulates the signals used to pick the terminal state (Requirement 3).
   function appendEvent(ev) {
     var key = dedupKey(ev);
     if (rendered[key]) { return; } // already rendered: never double-render
@@ -133,29 +162,113 @@
     li.appendChild(label);
     timelineEl.appendChild(li);
 
-    // Entering the Gate-presented state surfaces the Approve/Reject controls.
-    if (ev.event_type === "approval_gate_presented") {
-      showApproval(ev);
-    }
-    // Any resolving event closes the gate UI.
-    if (ev.event_type === "approval_decision" || ev.event_type === "approval_rejected") {
-      hideApproval();
+    var details = ev.details || {};
+    switch (ev.event_type) {
+      case "approval_gate_presented":
+        // Entering the Gate-presented state surfaces the Approve/Reject controls.
+        showApproval(ev);
+        break;
+      case "approval_decision":
+      case "approval_rejected":
+        // Any resolving event closes the gate UI.
+        hideApproval();
+        break;
+      case "verdict":
+        if (details.verdict === "publish") { publishVerdictSeen = true; }
+        break;
+      case "file_escalated":
+        escalatedFiles.push({
+          filename: details.filename || "(unknown file)",
+          reason: details.reason || ""
+        });
+        break;
+      case "agent_error":
+        // First failing step wins; it is what halted the pipeline.
+        if (!errorInfo) {
+          errorInfo = { step: details.step || ev.agent_type || "pipeline", message: details.error || "" };
+        }
+        break;
+      case "pipeline_complete":
+        // A terminal event reporting an error carries the failing context.
+        if ((details.status === "error" || details.status === "halted") && !errorInfo) {
+          errorInfo = { step: details.step || ev.agent_type || "pipeline", message: details.error || details.status };
+        }
+        break;
     }
   }
 
-  // showTerminal renders the single terminal frame and closes the stream.
+  // renderErrored shows the Errored terminal state: the failing step and message
+  // (Requirement 3.5/3.6).
+  function renderErrored() {
+    var info = errorInfo || { step: "pipeline", message: "The Run ended with an error." };
+    terminalEl.className = "error";
+    terminalEl.textContent = "Run failed.";
+    var detail = document.createElement("span");
+    detail.className = "terminal-detail";
+    var step = document.createElement("span");
+    step.className = "terminal-step";
+    step.textContent = info.step;
+    detail.appendChild(document.createTextNode("Failing step: "));
+    detail.appendChild(step);
+    if (info.message) {
+      detail.appendChild(document.createTextNode(" — " + info.message));
+    }
+    terminalEl.appendChild(detail);
+    terminalEl.style.display = "block";
+    setStatus("Run failed at " + info.step + ".", true);
+  }
+
+  // renderEscalated shows the Escalated terminal state: a manual-review message
+  // listing each escalated file and its reason (Requirement 3.4).
+  function renderEscalated() {
+    escalatedFilesEl.innerHTML = "";
+    escalatedFiles.forEach(function (f) {
+      var li = document.createElement("li");
+      li.textContent = f.filename;
+      if (f.reason) {
+        var reason = document.createElement("span");
+        reason.className = "reason";
+        reason.textContent = " — " + f.reason;
+        li.appendChild(reason);
+      }
+      escalatedFilesEl.appendChild(li);
+    });
+    escalatedEl.style.display = "block";
+    setStatus("Run held for manual review (" + escalatedFiles.length + " file(s) escalated).");
+  }
+
+  // renderComplete shows the happy terminal state.
+  function renderComplete() {
+    terminalEl.className = "";
+    terminalEl.textContent = "Run complete.";
+    terminalEl.style.display = "block";
+    setStatus("Run complete.");
+  }
+
+  // showTerminal renders the SINGLE terminal frame and closes the stream,
+  // settling into exactly one of {Errored, Escalated, Complete}. The server
+  // reconciles the subprocess exit against the terminal event and encodes the
+  // outcome in payload.status; the client also falls back to its own derivation
+  // from the accumulated event signals (Requirement 3.2).
   function showTerminal(payload) {
-    if (terminalShown) { return; }
+    if (terminalShown) { return; } // exactly one terminal frame, ever
     terminalShown = true;
     hideApproval();
+
     var status = (payload && payload.status) || "complete";
-    var isError = status === "error";
-    terminalEl.textContent = isError ? "Run finished with errors." : "Run complete.";
-    terminalEl.className = isError ? "error" : "";
-    terminalEl.style.display = "block";
+    var isError = status === "error" || errorInfo !== null;
+    var isEscalated = status === "escalated" || (!publishVerdictSeen && escalatedFiles.length > 0);
+
+    if (isError) {
+      renderErrored();
+    } else if (isEscalated) {
+      renderEscalated();
+    } else {
+      renderComplete();
+    }
+
     closeStream();
     runBtn.disabled = false;
-    setStatus(isError ? "Run finished with errors." : "Run complete.", isError);
   }
 
   function closeStream() {

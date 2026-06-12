@@ -100,6 +100,12 @@ type Server struct {
 	vault     SuggestionService // vault-only topic suggestions; nil until wired
 	devto     DevtoPublisher    // dev.to publisher; nil until wired
 	isActive  func(runID string) bool
+	// terminalStatus reports the reconciled terminal status for a run_id (one of
+	// "complete", "escalated", "error", or "" while not yet terminal), so the
+	// SSE hub's synthetic frame reflects how the Run ended (Requirement 3). nil
+	// until wired via WithTerminalProbe, in which case the frame defaults to
+	// "complete".
+	terminalStatus func(runID string) string
 }
 
 // New constructs a Server backed by the given UI file system. The ui argument
@@ -139,6 +145,18 @@ func WithActiveProbe(fn func(runID string) bool) Option {
 	return func(s *Server) {
 		if fn != nil {
 			s.isActive = fn
+		}
+	}
+}
+
+// WithTerminalProbe lets the run manager report the reconciled terminal status
+// for a given run_id (Requirement 3), so the SSE hub's synthetic terminal frame
+// carries "complete", "escalated", or "error" and the client renders exactly
+// one of the three terminal states. Without it the frame defaults to "complete".
+func WithTerminalProbe(fn func(runID string) string) Option {
+	return func(s *Server) {
+		if fn != nil {
+			s.terminalStatus = fn
 		}
 	}
 }
@@ -343,9 +361,16 @@ func (s *Server) handleRunStatus(w http.ResponseWriter, r *http.Request) {
 	runID := r.URL.Query().Get("run_id")
 	logPath := filepath.Join(s.outputDir, runID, "agent-log.jsonl")
 	isActive := func() bool { return s.isActive(runID) }
+	// The terminal-status resolver reconciles the subprocess exit with the
+	// terminal event so the synthetic frame reflects how the Run ended
+	// (Requirement 3). When no probe is wired the hub defaults to "complete".
+	var terminalStatus func() string
+	if s.terminalStatus != nil {
+		terminalStatus = func() string { return s.terminalStatus(runID) }
+	}
 	// Errors here (e.g. client disconnect) are expected; the hub already wrote
 	// the SSE headers, so there is no separate error response to send.
-	_ = s.hub.Stream(r.Context(), w, logPath, isActive)
+	_ = s.hub.Stream(r.Context(), w, logPath, isActive, terminalStatus)
 }
 
 // fileServiceReady reports whether the file service is wired and, when not,

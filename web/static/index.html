@@ -46,6 +46,18 @@
       color: #7fe0a6; font-weight: 600;
     }
     #terminal.error { background: #2a0e0e; border-color: #5c1f1f; color: #f0a0a0; }
+    #terminal .terminal-detail { display: block; margin-top: 0.4rem; font-weight: 400; color: #cdd6df; }
+    #terminal .terminal-step { font-weight: 600; color: #f0a0a0; }
+    #escalated {
+      display: none; margin-top: 1.25rem; padding: 1rem 1.25rem;
+      border-radius: 8px; background: #1a1407; border: 1px solid #6b5210;
+      color: #f0c674;
+    }
+    #escalated h2 { margin: 0 0 0.5rem; font-size: 1.1rem; color: #f0c674; }
+    #escalated p { margin: 0 0 0.6rem; color: #cdd6df; }
+    #escalated .escalated-files { margin: 0; padding-left: 1.1rem; color: #cdd6df; }
+    #escalated .escalated-files li { margin: 0 0 0.35rem; }
+    #escalated .escalated-files .reason { color: #9aa7b2; }
     #approval {
       display: none; margin-top: 1.25rem; padding: 1rem 1.25rem;
       border-radius: 8px; background: #1a1407; border: 1px solid #6b5210;
@@ -92,6 +104,12 @@
         <button type="button" id="approve-btn">Approve</button>
         <button type="button" id="reject-btn">Reject</button>
       </div>
+    </div>
+
+    <div id="escalated" role="status" aria-live="polite">
+      <h2>Held for manual review</h2>
+      <p>No file earned a publish verdict. These files were escalated:</p>
+      <ul class="escalated-files" id="escalated-files"></ul>
     </div>
 
     <div id="terminal" role="status" aria-live="polite"></div>

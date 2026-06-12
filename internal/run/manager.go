@@ -106,6 +106,7 @@ type Manager struct {
 	mu     sync.Mutex
 	active bool
 	handle RunHandle
+	exits  map[string]exitResult // per-run terminal exit outcome (Requirement 3.7)
 }
 
 // Option customises a Manager.
@@ -142,6 +143,7 @@ func New(outputRoot string, starter RunnerStarter, opts ...Option) *Manager {
 		python:     "python",
 		script:     "scripts/run_headless.py",
 		idgen:      generateRunID,
+		exits:      make(map[string]exitResult),
 	}
 	for _, opt := range opts {
 		opt(m)
@@ -222,13 +224,15 @@ func (m *Manager) Start(req StartRequest) (RunHandle, error) {
 	return h, nil
 }
 
-// awaitCompletion blocks until the runner exits, then clears the active Run if
-// it is still the one identified by runID (a later Run must not be cancelled by
-// an earlier runner's exit).
+// awaitCompletion blocks until the runner exits, then records the exit outcome
+// (so TerminalStatus can reconcile exit vs event, Requirement 3.7) and clears
+// the active Run if it is still the one identified by runID (a later Run must
+// not be cancelled by an earlier runner's exit).
 func (m *Manager) awaitCompletion(runID string, cmd *exec.Cmd) {
-	_ = m.waiter(cmd)
+	err := m.waiter(cmd)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.exits[runID] = exitResult{exited: true, exitCode: exitCodeOf(err)}
 	if m.active && m.handle.RunID == runID {
 		m.active = false
 	}
