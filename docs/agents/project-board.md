@@ -40,14 +40,17 @@ GitHub Projects v2 board for `mikeartee/magic-content-engine`.
 | `/tdd` ship — PR opened | In review |
 | `/triage` → `wontfix` | Done |
 
-Issue closure (PR merged or manual close) moves the card to `Done` automatically via the board's built-in **Auto-close issue** workflow. Skills do not write `Done` themselves.
+Issue closure (PR merged or manual close) moves the card to `Done` automatically via the board's built-in **Item closed** workflow, when it is enabled. Skills do not write `Done` themselves. If the **Item closed** workflow is NOT enabled, closed issues keep their previous Status (e.g. `In review`) and must be moved to `Done` manually (see the GraphQL helper below, using the `Done` option id).
 
 ## Recommended board workflows to enable
 
 Visit https://github.com/users/mikeartee/projects/4/workflows and enable:
 
 1. **Auto-add to project** — filter: `repo:mikeartee/magic-content-engine is:issue,pr is:open`
-2. **Auto-close issue** — so closing an issue lands its card on Done without skills having to
+2. **Item closed** — set Status to `Done`, so closing an issue (incl. via a PR merge) lands its card on Done without skills having to.
+3. **Pull request merged** (optional) — set Status to `Done`, to cover the PRs themselves.
+
+Note: **Item closed** is the workflow that moves a closed issue's card to Done. Do NOT confuse it with **Auto-close issue**, which is the reverse (it closes an issue when its Status is set to a chosen value). For the "merge/close → Done" behaviour you want, enable **Item closed**.
 
 These can't be toggled via `gh` CLI yet — enable them manually in the browser.
 
