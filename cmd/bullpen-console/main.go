@@ -14,6 +14,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os/exec"
 	"time"
 
 	"github.com/mikeartee/magic-content-engine/console/internal/desktop"
@@ -40,8 +41,21 @@ func main() {
 		log.Fatalf("could not select a port: %v", err)
 	}
 
-	srv := server.New(web.Static(), server.WithOutputDir(outputRoot))
-	srv.SetRunManager(run.New(outputRoot, run.DefaultStarter))
+	rm := run.New(outputRoot, run.DefaultStarter,
+		// Observe runner exit so the single-active slot is released and the SSE
+		// hub settles into its terminal frame once the pipeline finishes.
+		run.WithCompletionWatch(func(c *exec.Cmd) error { return c.Wait() }))
+
+	srv := server.New(web.Static(),
+		server.WithOutputDir(outputRoot),
+		// Let the SSE hub know whether a given run_id is still streaming, so it
+		// holds the connection open during a live Run and only emits the
+		// terminal frame after the runner has exited.
+		server.WithActiveProbe(func(runID string) bool {
+			h, ok := rm.Active()
+			return ok && h.RunID == runID
+		}))
+	srv.SetRunManager(rm)
 	srv.SetFileService(files.New(outputRoot))
 	srv.SetSuggestionService(vault.New())
 	addr := server.ListenAddr(chosen)

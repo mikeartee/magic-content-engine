@@ -14,7 +14,9 @@ Args:
     --topic       Content topic (free text, required).
     --outputs     One or more of: blog youtube cfp usergroup digest all.
     --run-id      Run identifier; names the run directory.
-    --output-dir  Base output directory; the run dir is <output-dir>/<run-id>/.
+    --output-dir  The per-run directory itself (output/<run-id>/), passed
+                  whole by the Console's Run_Manager; agent-log.jsonl is
+                  written directly inside it.
 
 Requirements: REQ-bullpen-console-go-10 (Headless Runner Entry Point),
               REQ-bullpen-console-go-2 (Cross-Process Approval Gate).
@@ -93,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
     run_date_str = args.run_date or date.today().isoformat()
     run_date = date.fromisoformat(run_date_str)
 
-    run_dir = Path(args.output_dir) / args.run_id
+    run_dir = Path(args.output_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
 
     brief = BullpenBrief(

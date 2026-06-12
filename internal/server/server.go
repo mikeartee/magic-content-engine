@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/mikeartee/magic-content-engine/console/internal/files"
 	"github.com/mikeartee/magic-content-engine/console/internal/run"
@@ -117,6 +118,21 @@ func WithActiveProbe(fn func(runID string) bool) Option {
 	return func(s *Server) {
 		if fn != nil {
 			s.isActive = fn
+		}
+	}
+}
+
+// WithSSETiming overrides the SSE hub's poll interval and idle-tick limit. It
+// exists for tests that need the terminal frame to settle quickly; production
+// keeps the hub's ~1s/2-tick defaults. Non-positive values leave the
+// corresponding default in place.
+func WithSSETiming(poll time.Duration, idleTicks int) Option {
+	return func(s *Server) {
+		if poll > 0 {
+			s.hub.PollInterval = poll
+		}
+		if idleTicks > 0 {
+			s.hub.IdleTicksLimit = idleTicks
 		}
 	}
 }
