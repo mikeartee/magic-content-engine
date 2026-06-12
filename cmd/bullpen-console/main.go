@@ -17,6 +17,7 @@ import (
 	"github.com/mikeartee/magic-content-engine/console/internal/files"
 	"github.com/mikeartee/magic-content-engine/console/internal/run"
 	"github.com/mikeartee/magic-content-engine/console/internal/server"
+	"github.com/mikeartee/magic-content-engine/console/internal/vault"
 	"github.com/mikeartee/magic-content-engine/console/web"
 )
 
@@ -35,6 +36,7 @@ func main() {
 	srv := server.New(web.Static(), server.WithOutputDir(outputRoot))
 	srv.SetRunManager(run.New(outputRoot, run.DefaultStarter))
 	srv.SetFileService(files.New(outputRoot))
+	srv.SetSuggestionService(vault.New())
 	addr := server.ListenAddr(*port)
 
 	httpServer := &http.Server{
