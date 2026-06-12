@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/mikeartee/magic-content-engine/console/internal/files"
 	"github.com/mikeartee/magic-content-engine/console/internal/run"
 	"github.com/mikeartee/magic-content-engine/console/internal/server"
 	"github.com/mikeartee/magic-content-engine/console/web"
@@ -31,8 +32,9 @@ func main() {
 	port := flag.Int("port", defaultPort, "loopback port to listen on")
 	flag.Parse()
 
-	srv := server.New(web.Static())
+	srv := server.New(web.Static(), server.WithOutputDir(outputRoot))
 	srv.SetRunManager(run.New(outputRoot, run.DefaultStarter))
+	srv.SetFileService(files.New(outputRoot))
 	addr := server.ListenAddr(*port)
 
 	httpServer := &http.Server{
