@@ -130,7 +130,7 @@
 
     /* ---------- KPI strip ---------- */
 
-    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin: 0 0 1.5rem; }
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin: 0 0 1.5rem; }
 
     .kpi {
       display: block;
@@ -713,6 +713,14 @@
     <div class="kpi">
       <span class="kpi-num" id="kpi-stage">-</span>
       <span class="kpi-label">Stage</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-num" id="kpi-articles">-</span>
+      <span class="kpi-label">Articles crawled</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-num" id="kpi-scored">-</span>
+      <span class="kpi-label">Scored above threshold</span>
     </div>
     <div class="kpi">
       <span class="kpi-num" id="kpi-elapsed">0:00</span>

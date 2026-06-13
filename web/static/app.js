@@ -48,6 +48,8 @@
   var attnPill = document.getElementById("attn-pill");
   var kpiStatusEl = document.getElementById("kpi-status");
   var kpiStageEl = document.getElementById("kpi-stage");
+  var kpiArticlesEl = document.getElementById("kpi-articles");
+  var kpiScoredEl = document.getElementById("kpi-scored");
   var kpiElapsedEl = document.getElementById("kpi-elapsed");
   var kpiNeedsEl = document.getElementById("kpi-needs");
   var kpiNeedsCard = document.getElementById("kpi-needs-card");
@@ -106,6 +108,26 @@
 
   function setStage(label) {
     if (kpiStageEl) { kpiStageEl.textContent = label; }
+  }
+
+  // resetResearchCounts returns the crawl/score tiles to their idle dash, shown
+  // until the researcher completion event carries the counts (Issue #60).
+  function resetResearchCounts() {
+    if (kpiArticlesEl) { kpiArticlesEl.textContent = "-"; }
+    if (kpiScoredEl) { kpiScoredEl.textContent = "-"; }
+  }
+
+  // applyResearchCounts fills the crawl/score tiles from a researcher completion
+  // event's details (articles_crawled, scored_above_threshold, added by #59). It
+  // self-guards on field presence, so any event carrying the counts updates the
+  // tiles and other events leave them untouched.
+  function applyResearchCounts(details) {
+    if (kpiArticlesEl && typeof details.articles_crawled === "number") {
+      kpiArticlesEl.textContent = String(details.articles_crawled);
+    }
+    if (kpiScoredEl && typeof details.scored_above_threshold === "number") {
+      kpiScoredEl.textContent = String(details.scored_above_threshold);
+    }
   }
 
   // setNeeds drives the "need your decision" KPI and the app-bar attention pill
@@ -190,6 +212,7 @@
     hideApproval();
     setKpiStatus("Running", "running");
     setStage("-");
+    resetResearchCounts();
     startElapsed();
   }
 
@@ -336,6 +359,7 @@
     }
 
     if (ev.agent_type && ev.agent_type !== "pipeline") { setStage(ev.agent_type); }
+    applyResearchCounts(details);
 
     switch (ev.event_type) {
       case "approval_gate_presented":
