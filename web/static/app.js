@@ -488,4 +488,112 @@
 
   // Populate the recency list on load (Requirement 6.2).
   loadRecency();
+
+  // ----- Run History + file browser (#52) -----
+
+  // Reads the existing GET /api/runs endpoint, whose response shape is
+  // {"runs":[{"id":"<run_id>","files":["post.md","subdir/file.md", ...]}, ...]}.
+  // The API already orders runs by id descending and already excludes internal
+  // files (agent-log.jsonl, checkpoints.json), so this panel just renders what
+  // it returns. Selecting a run lists its files; each file entry carries
+  // data-run-id + data-file so the next slice (#53, in-app viewer) can open it.
+  var runsList = document.getElementById("runs-list");
+  var runsEmpty = document.getElementById("runs-empty");
+  var runFilesList = document.getElementById("run-files-list");
+  var runFilesEmpty = document.getElementById("run-files-empty");
+  var selectedRunBtn = null;
+
+  // renderRunFiles paints the file list for the selected run. Each file is a
+  // focusable button tagged with data-run-id + data-file; the viewer slice (#53)
+  // wires the open behaviour against those attributes. A subdir entry arrives as
+  // "subdir/filename" and is shown verbatim, with the directory segment dimmed.
+  function renderRunFiles(runID, files) {
+    runFilesList.innerHTML = "";
+    files = files || [];
+    if (files.length === 0) {
+      runFilesEmpty.textContent = "This run produced no files.";
+      return;
+    }
+    runFilesEmpty.textContent = "";
+    files.forEach(function (name) {
+      var li = document.createElement("li");
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "run-file";
+      // Click target for #53: identify the run and the file unambiguously.
+      btn.setAttribute("data-run-id", runID);
+      btn.setAttribute("data-file", name);
+      btn.title = name;
+
+      var slash = name.indexOf("/");
+      if (slash !== -1) {
+        var dir = document.createElement("span");
+        dir.className = "file-dir";
+        dir.textContent = name.slice(0, slash + 1);
+        btn.appendChild(dir);
+        btn.appendChild(document.createTextNode(name.slice(slash + 1)));
+      } else {
+        btn.textContent = name;
+      }
+      li.appendChild(btn);
+      runFilesList.appendChild(li);
+    });
+  }
+
+  // selectRun highlights the chosen run row and renders its files.
+  function selectRun(btn, run) {
+    if (selectedRunBtn) { selectedRunBtn.classList.remove("selected"); }
+    selectedRunBtn = btn;
+    btn.classList.add("selected");
+    renderRunFiles(run.id, run.files);
+  }
+
+  // renderRuns paints the run history list, newest first. The API already sorts
+  // by id descending; we sort client-side too so render order is strictly
+  // newest-first regardless of server ordering.
+  function renderRuns(runs) {
+    runs = (runs || []).slice().sort(function (a, b) {
+      if (a.id < b.id) { return 1; }
+      if (a.id > b.id) { return -1; }
+      return 0;
+    });
+    runsList.innerHTML = "";
+    runFilesList.innerHTML = "";
+    runFilesEmpty.textContent = "";
+    selectedRunBtn = null;
+
+    if (runs.length === 0) {
+      runsEmpty.textContent = "No runs yet. Start one above to see it here.";
+      return;
+    }
+    runsEmpty.textContent = "";
+    runs.forEach(function (run) {
+      var li = document.createElement("li");
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "run-item";
+      btn.textContent = run.id;
+      btn.title = run.id;
+      btn.addEventListener("click", function () { selectRun(btn, run); });
+      li.appendChild(btn);
+      runsList.appendChild(li);
+    });
+  }
+
+  // loadRuns fetches the run history. A network failure shows a small inline
+  // note rather than throwing; an empty list is a friendly message, not an error.
+  function loadRuns() {
+    fetch("/api/runs")
+      .then(function (resp) { return resp.json(); })
+      .then(function (data) { renderRuns((data && data.runs) || []); })
+      .catch(function () {
+        runsList.innerHTML = "";
+        runFilesList.innerHTML = "";
+        runFilesEmpty.textContent = "";
+        runsEmpty.textContent = "Could not load run history.";
+      });
+  }
+
+  // Populate the run history on load (#52).
+  loadRuns();
 })();
