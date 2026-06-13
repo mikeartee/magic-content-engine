@@ -179,6 +179,71 @@
       font-size: 0.88rem; line-height: 1.55; resize: vertical;
     }
     .viewer-editor:focus { outline: none; border-color: #2563eb; }
+
+    /* MIKE placeholder surfacing (#54) */
+    #viewer-mike {
+      display: none; margin: 0 0 0.75rem; padding: 0.75rem 0.9rem;
+      border-radius: 6px; background: #1a1407; border: 1px solid #6b5210; color: #f0c674;
+    }
+    #viewer-mike h3 { margin: 0 0 0.4rem; font-size: 0.95rem; color: #f0c674; }
+    #viewer-mike ul { margin: 0; padding-left: 1.1rem; }
+    #viewer-mike li { margin: 0 0 0.3rem; color: #e6dcc0; font-size: 0.9rem; }
+    .viewer-rendered .mike-placeholder {
+      margin: 0.6rem 0; padding: 0.55rem 0.85rem; border-radius: 6px;
+      background: #1a1407; border-left: 3px solid #d8a32a; color: #f0c674;
+      font-size: 0.9rem;
+    }
+    .viewer-rendered .mike-placeholder .mike-label {
+      font-weight: 600; color: #f5c451; margin-right: 0.35rem;
+    }
+
+    /* Review + publish panel (#54) */
+    #publish-panel .publish-run {
+      margin: 0 0 0.85rem; font-size: 0.92rem; color: #cdd6df;
+    }
+    #publish-panel .publish-run .run-id { color: #6db3f2; font-weight: 600; }
+    #publish-panel .publish-run .none { color: #9aa7b2; }
+    .legacy-label {
+      margin: 0 0 0.5rem; color: #9aa7b2; font-size: 0.78rem;
+      text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    #legacy-actions { list-style: none; margin: 0 0 1rem; padding: 0; }
+    #legacy-actions:empty { display: none; }
+    #legacy-actions li {
+      display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+      margin: 0 0 0.4rem; padding: 0.5rem 0.75rem; border-radius: 6px;
+      background: #131b24; border: 1px solid #243240;
+    }
+    #legacy-actions .legacy-name {
+      flex: 1 1 auto; min-width: 0; color: #cdd6df; font-size: 0.9rem;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    #legacy-actions .legacy-name .file-dir { color: #6b7785; }
+    #legacy-actions button {
+      padding: 0.35rem 0.8rem; font-size: 0.82rem; font-weight: 600;
+      background: #243240; color: #e6e6e6; border: 1px solid #2f4456; border-radius: 6px;
+    }
+    #legacy-actions button:hover:not(:disabled) { background: #2c3e50; border-color: #2563eb; }
+    #publish-panel .publish-field { margin: 0 0 0.75rem; }
+    #publish-panel .publish-field label { margin: 0 0 0.35rem; color: #cdd6df; }
+    #publish-panel .publish-hint { color: #6b7785; font-size: 0.82rem; }
+    #publish-panel .publish-toggle {
+      display: inline-flex; align-items: center; gap: 0.4rem; color: #cdd6df; font-size: 0.92rem;
+    }
+    #publish-btn { margin-top: 0.25rem; }
+    #publish-btn:disabled { background: #33415a; cursor: not-allowed; }
+    #publish-result {
+      display: none; margin-top: 1rem; padding: 0.85rem 1rem; border-radius: 6px;
+      font-size: 0.92rem;
+    }
+    #publish-result.success {
+      background: #0e2a1a; border: 1px solid #1f5c39; color: #7fe0a6;
+    }
+    #publish-result.error {
+      background: #2a0e0e; border: 1px solid #5c1f1f; color: #f0a0a0;
+    }
+    #publish-result a { color: #6db3f2; word-break: break-all; }
+    #publish-result .publish-meta { display: block; margin-top: 0.35rem; color: #cdd6df; font-weight: 400; }
   </style>
 </head>
 <body>
@@ -262,8 +327,41 @@
         </div>
       </div>
       <p class="viewer-message" id="viewer-message" role="status" aria-live="polite"></p>
+      <div id="viewer-mike" role="status" aria-live="polite">
+        <h3>MIKE sections need your input</h3>
+        <ul id="viewer-mike-list"></ul>
+      </div>
       <div class="viewer-rendered" id="viewer-rendered"></div>
       <textarea class="viewer-editor" id="viewer-editor" spellcheck="false" aria-label="File content editor"></textarea>
+    </fieldset>
+
+    <fieldset id="publish-panel" aria-label="Review and publish">
+      <legend>Review &amp; Publish</legend>
+      <p class="publish-run" id="publish-run">
+        <span class="none">Select a run in Run History to review and publish it.</span>
+      </p>
+
+      <p class="legacy-label">Quick actions</p>
+      <ul id="legacy-actions" aria-live="polite"></ul>
+
+      <div class="publish-field">
+        <label for="publish-title">Title</label>
+        <input type="text" id="publish-title" placeholder="Post title for dev.to" autocomplete="off">
+      </div>
+      <div class="publish-field">
+        <label for="publish-tags">Tags</label>
+        <input type="text" id="publish-tags" placeholder="comma,separated,tags" autocomplete="off">
+        <span class="publish-hint">Comma-separated, e.g. aws, kiro, agentcore</span>
+      </div>
+      <div class="publish-field">
+        <label class="publish-toggle">
+          <input type="checkbox" id="publish-published">
+          Publish live now (leave unchecked to save as a draft)
+        </label>
+      </div>
+      <button type="button" id="publish-btn" disabled>Publish to dev.to</button>
+
+      <div id="publish-result" role="status" aria-live="polite"></div>
     </fieldset>
   </main>
 
