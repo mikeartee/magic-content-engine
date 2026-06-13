@@ -51,12 +51,19 @@ class ScoredArticle:
 
 @dataclass
 class ResearchBrief:
-    """Output of the Researcher Agent."""
+    """Output of the Researcher Agent.
+
+    ``articles`` holds the scored-above-threshold (kept) articles, while
+    ``articles_crawled`` records the raw total crawled before scoring. The raw
+    count powers the Console dashboard KPI tiles. It defaults to 0 so existing
+    constructors and older serialised dicts remain backward-compatible.
+    """
 
     articles: list[ScoredArticle]
     sources_crawled: list[str]
     sources_failed: list[str]
     run_timestamp: str  # ISO 8601
+    articles_crawled: int = 0  # raw count crawled before scoring (kept >= threshold are in `articles`)
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable dict."""
@@ -65,16 +72,22 @@ class ResearchBrief:
             "sources_crawled": list(self.sources_crawled),
             "sources_failed": list(self.sources_failed),
             "run_timestamp": self.run_timestamp,
+            "articles_crawled": self.articles_crawled,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ResearchBrief":
-        """Reconstruct a ResearchBrief from a plain dict (round-trip)."""
+        """Reconstruct a ResearchBrief from a plain dict (round-trip).
+
+        Tolerates older dicts that lack ``articles_crawled`` by defaulting
+        it to 0.
+        """
         return cls(
             articles=[ScoredArticle(**a) for a in data["articles"]],
             sources_crawled=list(data["sources_crawled"]),
             sources_failed=list(data["sources_failed"]),
             run_timestamp=data["run_timestamp"],
+            articles_crawled=data.get("articles_crawled", 0),
         )
 
 

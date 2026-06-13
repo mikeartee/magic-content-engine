@@ -313,7 +313,14 @@ def run_pipeline(
         "agent_completed",
         "researcher",
         {
+            # Kept (scored-above-threshold) count. Preserved for backward
+            # compatibility with downstream consumers.
             "articles_count": len(research_brief.articles),
+            # Console KPI tile counts (Issue #59):
+            "articles_crawled": getattr(research_brief, "articles_crawled", 0),
+            "scored_above_threshold": len(research_brief.articles),
+            "sources_crawled": len(research_brief.sources_crawled),
+            "sources_failed": len(research_brief.sources_failed),
             "output_hash": research_hash,
         },
     )

@@ -773,10 +773,12 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         sources_crawled=sources_crawled,
         sources_failed=sources_failed,
         run_timestamp=datetime.now(timezone.utc).isoformat(),
+        articles_crawled=len(raw_articles),
     )
 
     logger.info(
-        "ResearchBrief complete: %d articles kept, %d sources crawled, %d failed",
+        "ResearchBrief complete: %d crawled, %d articles kept, %d sources crawled, %d failed",
+        len(raw_articles),
         len(scored_articles),
         len(sources_crawled),
         len(sources_failed),

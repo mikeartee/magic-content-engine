@@ -428,6 +428,96 @@ class TestPipelineSequence:
 
 
 # ---------------------------------------------------------------------------
+# 2b. Researcher completion event carries crawl/score counts — Issue #59
+# ---------------------------------------------------------------------------
+
+
+class TestResearcherCompletionEventCounts:
+    """The researcher ``agent_completed`` event must carry the KPI counts.
+
+    Issue #59: the Console dashboard KPI tiles render the raw crawled count,
+    the scored-above-threshold (kept) count, and the source counts. These must
+    appear in the researcher completion event ``details``.
+    """
+
+    def _make_research_brief_with_counts(self) -> ResearchBrief:
+        # 2 scored (kept) articles, 5 crawled raw, 3 sources crawled, 1 failed.
+        return ResearchBrief(
+            articles=[
+                ScoredArticle(
+                    title="Kiro IDE 1.0",
+                    url="https://kiro.dev/changelog/ide/",
+                    source="kiro.dev",
+                    relevance_score=5,
+                    summary="Kiro IDE 1.0 released.",
+                ),
+                ScoredArticle(
+                    title="AgentCore GA",
+                    url="https://aws.amazon.com/new/agentcore",
+                    source="aws.amazon.com/new/",
+                    relevance_score=4,
+                    summary="AgentCore GA.",
+                ),
+            ],
+            sources_crawled=["kiro.dev", "aws.amazon.com/new/", "community.aws"],
+            sources_failed=["strandsagents.com"],
+            run_timestamp="2025-07-14T09:00:00+00:00",
+            articles_crawled=5,
+        )
+
+    def _run_and_capture(self) -> list[AMILogEvent]:
+        events: list[AMILogEvent] = []
+        rb = self._make_research_brief_with_counts()
+        (researcher_fn, desk_editor_fn, writer_fn, subeditor_fn,
+         publisher_fn, approval_fn, call_log) = _make_pipeline_fns(
+            researcher_result=rb
+        )
+
+        run_pipeline(
+            brief=_make_brief(),
+            researcher_fn=researcher_fn,
+            desk_editor_fn=desk_editor_fn,
+            writer_fn=writer_fn,
+            subeditor_fn=subeditor_fn,
+            publisher_fn=publisher_fn,
+            approval_fn=approval_fn,
+            log_fn=lambda e: events.append(e),
+            checkpoint_fn=_noop_checkpoint,
+        )
+        return events
+
+    def _researcher_completed_details(self) -> dict:
+        events = self._run_and_capture()
+        completed = [
+            e for e in events
+            if e.event_type == "agent_completed" and e.agent_type == "researcher"
+        ]
+        assert len(completed) == 1
+        return completed[0].details
+
+    def test_event_includes_articles_crawled(self):
+        details = self._researcher_completed_details()
+        assert details["articles_crawled"] == 5
+
+    def test_event_includes_scored_above_threshold(self):
+        details = self._researcher_completed_details()
+        assert details["scored_above_threshold"] == 2
+
+    def test_event_includes_sources_crawled_count(self):
+        details = self._researcher_completed_details()
+        assert details["sources_crawled"] == 3
+
+    def test_event_includes_sources_failed_count(self):
+        details = self._researcher_completed_details()
+        assert details["sources_failed"] == 1
+
+    def test_event_preserves_articles_count_key(self):
+        """The existing articles_count key (kept count) must not regress."""
+        details = self._researcher_completed_details()
+        assert details["articles_count"] == 2
+
+
+# ---------------------------------------------------------------------------
 # 3. Revision loop bounded at 2 cycles
 # ---------------------------------------------------------------------------
 
