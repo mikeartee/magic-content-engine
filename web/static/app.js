@@ -42,6 +42,16 @@
   var escalatedEl = document.getElementById("escalated");
   var escalatedFilesEl = document.getElementById("escalated-files");
 
+  // Run-summary KPIs and the app-bar attention pill. These surface state derived
+  // purely from the event stream: status, current stage (last agent), elapsed
+  // time, and the count of files awaiting a decision.
+  var attnPill = document.getElementById("attn-pill");
+  var kpiStatusEl = document.getElementById("kpi-status");
+  var kpiStageEl = document.getElementById("kpi-stage");
+  var kpiElapsedEl = document.getElementById("kpi-elapsed");
+  var kpiNeedsEl = document.getElementById("kpi-needs");
+  var kpiNeedsCard = document.getElementById("kpi-needs-card");
+
   // Topic Ideas panel (#51, Requirement 6). On load it fills from the vault
   // recency list (GET /api/suggestions); the search box queries
   // GET /api/suggestions/search?q=. Clicking a suggestion pre-fills the Run
@@ -67,6 +77,78 @@
   var publishVerdictSeen = false;     // a verdict event with verdict "publish"
   var escalatedFiles = [];            // [{filename, reason}] from file_escalated
   var errorInfo = null;               // {step, message} from agent_error / error complete
+
+  // Timeline rendering state. Routine events fold into a collapsible group on the
+  // node rail; milestones (gate, verdict, escalation, error) render directly.
+  var currentGroupUl = null;
+  var currentGroupDetails = null;
+
+  // Elapsed-time ticker for the KPI strip.
+  var runStartMs = null;
+  var elapsedTimer = null;
+
+  // event_type values that read as milestones on the timeline rail.
+  var MILESTONE_TYPES = {
+    approval_gate_presented: true,
+    verdict: true,
+    file_escalated: true,
+    agent_error: true,
+    pipeline_complete: true
+  };
+
+  // ----- Run-summary KPIs (derived from the event stream) -----
+
+  function setKpiStatus(label, kind) {
+    if (!kpiStatusEl) { return; }
+    kpiStatusEl.textContent = label;
+    kpiStatusEl.className = "kpi-num kpi-" + (kind || "idle");
+  }
+
+  function setStage(label) {
+    if (kpiStageEl) { kpiStageEl.textContent = label; }
+  }
+
+  // setNeeds drives the "need your decision" KPI and the app-bar attention pill
+  // from the count of files waiting at the approval gate.
+  function setNeeds(count) {
+    if (kpiNeedsEl) { kpiNeedsEl.textContent = String(count); }
+    if (kpiNeedsCard) {
+      if (count > 0) { kpiNeedsCard.classList.add("kpi-card-amber"); }
+      else { kpiNeedsCard.classList.remove("kpi-card-amber"); }
+    }
+    if (attnPill) {
+      if (count > 0) {
+        attnPill.textContent = count === 1 ? "1 file needs your decision" : count + " files need your decision";
+        attnPill.style.display = "inline-flex";
+      } else {
+        attnPill.style.display = "none";
+      }
+    }
+  }
+
+  function formatElapsed(ms) {
+    var s = Math.floor(ms / 1000);
+    var m = Math.floor(s / 60);
+    var rem = s % 60;
+    return m + ":" + (rem < 10 ? "0" + rem : String(rem));
+  }
+
+  function tickElapsed() {
+    if (runStartMs == null) { return; }
+    if (kpiElapsedEl) { kpiElapsedEl.textContent = formatElapsed(Date.now() - runStartMs); }
+  }
+
+  function startElapsed() {
+    runStartMs = Date.now();
+    if (elapsedTimer) { clearInterval(elapsedTimer); }
+    tickElapsed();
+    elapsedTimer = setInterval(tickElapsed, 1000);
+  }
+
+  function stopElapsed() {
+    if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+    tickElapsed();
+  }
 
   function setStatus(message, isError) {
     statusEl.textContent = message;
@@ -98,12 +180,17 @@
     escalatedFiles = [];
     errorInfo = null;
     timelineEl.innerHTML = "";
+    currentGroupUl = null;
+    currentGroupDetails = null;
     terminalEl.style.display = "none";
     terminalEl.className = "";
     terminalEl.textContent = "";
     escalatedEl.style.display = "none";
     escalatedFilesEl.innerHTML = "";
     hideApproval();
+    setKpiStatus("Running", "running");
+    setStage("-");
+    startElapsed();
   }
 
   // showApproval renders the Gate-presented state: the list of files pending
@@ -121,10 +208,12 @@
     approveBtn.disabled = false;
     rejectBtn.disabled = false;
     approvalEl.style.display = "block";
+    setNeeds(pending.length);
   }
 
   function hideApproval() {
     approvalEl.style.display = "none";
+    setNeeds(0);
   }
 
   // decide POSTs the human decision to the Console, which writes
@@ -155,6 +244,75 @@
       });
   }
 
+  // eventKind classifies an event for dot/agent colouring: errors are red,
+  // escalations amber, everything else the default accent.
+  function eventKind(eventType, details) {
+    if (eventType === "agent_error") { return "err"; }
+    if (eventType === "pipeline_complete" && (details.status === "error" || details.status === "halted")) { return "err"; }
+    if (eventType === "file_escalated") { return "warn"; }
+    return "";
+  }
+
+  // buildEventLi builds one rail row: li.event > span.ts + span.node(dot) + span.what.
+  function buildEventLi(ev, kind) {
+    var li = document.createElement("li");
+    li.className = "event" + (kind ? " is-" + kind : "");
+
+    var ts = document.createElement("span");
+    ts.className = "ts";
+    ts.textContent = ev.timestamp || "";
+
+    var node = document.createElement("span");
+    node.className = "node";
+    var dot = document.createElement("span");
+    dot.className = "dot";
+    dot.setAttribute("aria-hidden", "true");
+    node.appendChild(dot);
+
+    var what = document.createElement("span");
+    what.className = "what";
+    var agent = document.createElement("span");
+    agent.className = "agent";
+    agent.textContent = ev.agent_type || "pipeline";
+    var etype = document.createElement("span");
+    etype.className = "etype";
+    etype.textContent = ev.event_type || "event";
+    what.appendChild(agent);
+    what.appendChild(etype);
+
+    li.appendChild(ts);
+    li.appendChild(node);
+    li.appendChild(what);
+    return li;
+  }
+
+  // closeRoutineGroup collapses the open routine group, if any, so completed
+  // chatter tidies away while the milestone that follows it stands out.
+  function closeRoutineGroup() {
+    if (currentGroupDetails) { currentGroupDetails.open = false; }
+    currentGroupDetails = null;
+    currentGroupUl = null;
+  }
+
+  // appendRoutine folds a routine event into the current collapsible group,
+  // opening a fresh one when the previous row was a milestone.
+  function appendRoutine(li) {
+    if (!currentGroupUl) {
+      currentGroupDetails = document.createElement("details");
+      currentGroupDetails.className = "event-group";
+      currentGroupDetails.open = true;
+      var summary = document.createElement("summary");
+      currentGroupDetails.appendChild(summary);
+      currentGroupUl = document.createElement("ul");
+      currentGroupUl.className = "group-timeline";
+      currentGroupDetails.appendChild(currentGroupUl);
+      timelineEl.appendChild(currentGroupDetails);
+    }
+    currentGroupUl.appendChild(li);
+    var n = currentGroupUl.childNodes.length;
+    currentGroupDetails.querySelector("summary").textContent = n === 1 ? "1 routine event" : n + " routine events";
+  }
+
   // appendEvent renders one agent event, suppressing duplicates by DedupKey, and
   // accumulates the signals used to pick the terminal state (Requirement 3).
   function appendEvent(ev) {
@@ -162,21 +320,23 @@
     if (rendered[key]) { return; } // already rendered: never double-render
     rendered[key] = true;
 
-    var li = document.createElement("li");
-    var ts = document.createElement("span");
-    ts.className = "ts";
-    ts.textContent = ev.timestamp || "";
-    var agent = document.createElement("span");
-    agent.className = "agent";
-    agent.textContent = ev.agent_type || "pipeline";
-    var label = document.createElement("span");
-    label.textContent = " " + (ev.event_type || "event");
-    li.appendChild(ts);
-    li.appendChild(agent);
-    li.appendChild(label);
-    timelineEl.appendChild(li);
-
     var details = ev.details || {};
+    var eventType = ev.event_type || "event";
+    // The first row of a run reads as a milestone so the run start is anchored
+    // on the rail even when it arrives as a routine agent event.
+    var firstRow = timelineEl.childNodes.length === 0;
+    var milestone = firstRow || MILESTONE_TYPES[eventType] === true;
+    var li = buildEventLi(ev, eventKind(eventType, details));
+
+    if (milestone) {
+      closeRoutineGroup();
+      timelineEl.appendChild(li);
+    } else {
+      appendRoutine(li);
+    }
+
+    if (ev.agent_type && ev.agent_type !== "pipeline") { setStage(ev.agent_type); }
+
     switch (ev.event_type) {
       case "approval_gate_presented":
         // Entering the Gate-presented state surfaces the Approve/Reject controls.
@@ -230,6 +390,7 @@
     terminalEl.appendChild(detail);
     terminalEl.style.display = "block";
     setStatus("Run failed at " + info.step + ".", true);
+    setKpiStatus("Failed", "err");
   }
 
   // renderEscalated shows the Escalated terminal state: a manual-review message
@@ -249,6 +410,7 @@
     });
     escalatedEl.style.display = "block";
     setStatus("Run held for manual review (" + escalatedFiles.length + " file(s) escalated).");
+    setKpiStatus("Review", "warn");
   }
 
   // renderComplete shows the happy terminal state.
@@ -257,6 +419,7 @@
     terminalEl.textContent = "Run complete.";
     terminalEl.style.display = "block";
     setStatus("Run complete.");
+    setKpiStatus("Complete", "ok");
   }
 
   // showTerminal renders the SINGLE terminal frame and closes the stream,
@@ -268,6 +431,8 @@
     if (terminalShown) { return; } // exactly one terminal frame, ever
     terminalShown = true;
     hideApproval();
+    closeRoutineGroup();
+    stopElapsed();
 
     var status = (payload && payload.status) || "complete";
     var isError = status === "error" || errorInfo !== null;
@@ -316,6 +481,8 @@
       // we have shown the terminal is the expected end-of-stream, not a fault.
       if (!terminalShown) {
         setStatus("Connection to the Run stream was interrupted.", true);
+        setKpiStatus("Interrupted", "err");
+        stopElapsed();
       }
       closeStream();
       runBtn.disabled = false;

@@ -87,6 +87,24 @@
     .appbar-spacer { flex: 1; }
     .region { color: var(--faint); font-size: 0.8rem; white-space: nowrap; }
 
+    /* Attention pill: shown by app.js only while the approval gate is waiting. */
+    .attn-pill {
+      display: none;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.25rem 0.75rem;
+      border-radius: 999px;
+      background: var(--amber-bg);
+      border: 1px solid var(--amber-border);
+      color: var(--amber);
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .attn-pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--amber); flex: none; }
+    .attn-pill:hover { border-color: var(--amber); }
+
     /* ---------- Layout ---------- */
 
     .page { max-width: 1200px; margin: 0 auto; padding: 1.75rem 1.5rem 4rem; }
@@ -106,8 +124,46 @@
 
     @media (max-width: 900px) {
       .grid-main, .history-grid { grid-template-columns: 1fr; }
+      .kpis { grid-template-columns: 1fr 1fr; }
       .appbar { flex-wrap: wrap; gap: 0.5rem 1rem; }
     }
+
+    /* ---------- KPI strip ---------- */
+
+    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin: 0 0 1.5rem; }
+
+    .kpi {
+      display: block;
+      padding: 0.8rem 1.1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      text-decoration: none;
+    }
+    .kpi-num {
+      display: block;
+      font-size: 1.3rem;
+      font-weight: 700;
+      line-height: 1.3;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.01em;
+      overflow-wrap: anywhere;
+    }
+    .kpi-label { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); }
+
+    .kpi-num.kpi-running { color: var(--accent); }
+    .kpi-num.kpi-ok { color: var(--green); }
+    .kpi-num.kpi-warn { color: var(--amber); }
+    .kpi-num.kpi-err { color: var(--red); }
+    .kpi-num.kpi-idle { color: var(--muted); }
+
+    a.kpi { cursor: pointer; }
+    .kpi-card-amber { background: var(--amber-bg); border-color: var(--amber-border); }
+    .kpi-card-amber .kpi-num { color: var(--amber); }
+    .kpi-card-amber .kpi-label { color: var(--amber); }
+    a.kpi:hover { border-color: var(--accent-dim); }
+    a.kpi-card-amber:hover { border-color: var(--amber); }
 
     /* ---------- Cards ---------- */
 
@@ -203,17 +259,62 @@
     .status { margin: 0 0 0.85rem; min-height: 1.2rem; color: var(--muted); font-size: 0.9rem; }
     .status.error { color: var(--red); }
 
-    #timeline { list-style: none; margin: 0; padding: 0; }
-    #timeline li {
-      padding: 0.5rem 0.75rem;
-      margin: 0 0 0.4rem;
-      border-radius: var(--radius-sm);
-      background: var(--surface-2);
-      border-left: 3px solid var(--accent-dim);
-      font-size: 0.9rem;
+    /* Timeline node-rail. app.js builds each event as
+       li.event > span.ts + span.node(> span.dot) + span.what(> span.agent + span.etype),
+       with milestones on the main rail and routine events folded into a
+       collapsible group. */
+    #timeline, .group-timeline { list-style: none; margin: 0; padding: 0; }
+
+    .event {
+      display: grid;
+      grid-template-columns: 4.6rem 1.1rem 1fr;
+      gap: 0 0.6rem;
+      padding: 0.35rem 0;
+      font-size: 0.88rem;
     }
-    #timeline li .ts { color: var(--faint); font-variant-numeric: tabular-nums; margin-right: 0.6rem; font-size: 0.82rem; }
-    #timeline li .agent { color: var(--accent); font-weight: 600; margin-right: 0.3rem; }
+    .event .ts { color: var(--faint); font-variant-numeric: tabular-nums; font-size: 0.8rem; line-height: 1.7; }
+    .event .node { position: relative; display: flex; justify-content: center; padding-top: 0.5rem; }
+    .event .node::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: -0.35rem;
+      width: 1px;
+      background: var(--border);
+    }
+    #timeline > .event:first-child .node::before { top: 0.5rem; }
+    .event .dot {
+      position: relative;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-dim);
+      border: 1px solid var(--accent);
+      flex: none;
+    }
+    .event.is-warn .dot { background: var(--amber); border-color: var(--amber); }
+    .event.is-err .dot { background: var(--red); border-color: var(--red); }
+    .event .what { min-width: 0; }
+    .event .agent { font-weight: 600; color: var(--accent); margin-right: 0.5rem; }
+    .event.is-warn .agent { color: var(--amber); }
+    .event.is-err .agent { color: var(--red); }
+    .event .etype { color: var(--faint); font-size: 0.78rem; font-family: var(--mono); }
+
+    .event-group { margin: 0; }
+    .event-group summary {
+      display: block;
+      cursor: pointer;
+      list-style: none;
+      padding: 0.3rem 0 0.3rem 5.7rem;
+      color: var(--faint);
+      font-size: 0.8rem;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .event-group summary::-webkit-details-marker { display: none; }
+    .event-group summary::before { content: "+ "; }
+    .event-group[open] summary::before { content: "- "; }
+    .event-group summary:hover, .event-group[open] summary { color: var(--muted); }
 
     /* Terminal banner. app.js drives this element's className between "" (complete)
        and "error", and toggles display, so it is styled by id, not by a base class. */
@@ -593,6 +694,7 @@
     <span class="brand-sub">magic-content-engine</span>
   </div>
   <div class="appbar-spacer"></div>
+  <a class="attn-pill" id="attn-pill" href="#approval"></a>
   <span class="region">ap-southeast-2 - Sydney</span>
 </header>
 
@@ -602,6 +704,25 @@
     <strong>Pipeline console</strong>
     Start a content pipeline run and watch it stream live.
   </p>
+
+  <section class="kpis" aria-label="Current run at a glance">
+    <div class="kpi">
+      <span class="kpi-num kpi-idle" id="kpi-status">Idle</span>
+      <span class="kpi-label">Status</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-num" id="kpi-stage">-</span>
+      <span class="kpi-label">Stage</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-num" id="kpi-elapsed">0:00</span>
+      <span class="kpi-label">Elapsed</span>
+    </div>
+    <a class="kpi" id="kpi-needs-card" href="#approval">
+      <span class="kpi-num" id="kpi-needs">0</span>
+      <span class="kpi-label">Need your decision</span>
+    </a>
+  </section>
 
   <div class="grid-main">
 
