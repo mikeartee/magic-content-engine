@@ -88,6 +88,29 @@
     #ideas-list .idea .idea-topic { font-weight: 600; color: #cdd6df; }
     #ideas-list .idea .idea-meta { color: #6b7785; font-size: 0.82rem; white-space: nowrap; }
     #ideas-empty { margin: 0; color: #9aa7b2; font-size: 0.9rem; }
+    .runs-layout { display: flex; gap: 1rem; align-items: flex-start; }
+    .runs-col, .files-col { flex: 1 1 0; min-width: 0; }
+    .runs-col-label {
+      margin: 0 0 0.5rem; color: #9aa7b2; font-size: 0.78rem;
+      text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    #runs-list, #run-files-list { list-style: none; margin: 0; padding: 0; max-height: 18rem; overflow-y: auto; }
+    #runs-list li, #run-files-list li { margin: 0 0 0.4rem; }
+    #runs-list .run-item, #run-files-list .run-file {
+      display: block; width: 100%; box-sizing: border-box; text-align: left; cursor: pointer;
+      padding: 0.55rem 0.75rem; border-radius: 6px; font-weight: 400; font-size: 0.92rem;
+      background: #131b24; border: 1px solid #243240; color: #e6e6e6;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    #runs-list .run-item:hover, #runs-list .run-item:focus,
+    #run-files-list .run-file:hover, #run-files-list .run-file:focus {
+      background: #18222e; border-color: #2563eb; outline: none;
+    }
+    #runs-list .run-item.selected {
+      background: #18222e; border-color: #2563eb; border-left: 3px solid #2563eb;
+    }
+    #run-files-list .run-file .file-dir { color: #6b7785; }
+    #runs-empty, #run-files-empty { margin: 0; color: #9aa7b2; font-size: 0.9rem; }
   </style>
 </head>
 <body>
@@ -142,6 +165,22 @@
     </div>
 
     <div id="terminal" role="status" aria-live="polite"></div>
+
+    <fieldset id="runs-panel">
+      <legend>Run History</legend>
+      <div class="runs-layout">
+        <div class="runs-col">
+          <p class="runs-col-label">Past runs</p>
+          <ul id="runs-list" aria-live="polite"></ul>
+          <p id="runs-empty"></p>
+        </div>
+        <div class="files-col">
+          <p class="runs-col-label">Files</p>
+          <ul id="run-files-list" aria-live="polite"></ul>
+          <p id="run-files-empty"></p>
+        </div>
+      </div>
+    </fieldset>
   </main>
 
   <script src="/static/app.js"></script>
