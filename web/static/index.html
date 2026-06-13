@@ -5,320 +5,709 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bullpen Console</title>
   <style>
-    :root { color-scheme: dark; }
+    :root {
+      color-scheme: dark;
+      --bg: #0b0c0f;
+      --surface: #111318;
+      --surface-2: #16191f;
+      --border: #23262e;
+      --border-soft: #1b1e25;
+      --text: #e8eaed;
+      --muted: #9aa3af;
+      --faint: #646c78;
+      --accent: #5e9eff;
+      --accent-dim: #2b4a7a;
+      --green: #3fb37f;
+      --green-bg: #0e2018;
+      --green-border: #1f4a36;
+      --amber: #d9a13b;
+      --amber-bg: #201a0d;
+      --amber-border: #4a3c1a;
+      --red: #e0635a;
+      --red-bg: #211010;
+      --red-border: #4a2220;
+      --radius: 8px;
+      --radius-sm: 6px;
+      --mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+
+    * { box-sizing: border-box; }
+
     body {
-      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
       margin: 0;
-      background: #0f1419;
-      color: #e6e6e6;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
       min-height: 100vh;
     }
-    main { max-width: 760px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
-    h1 { margin: 0 0 0.25rem; font-size: 1.6rem; }
-    .tagline { margin: 0 0 1.5rem; color: #9aa7b2; }
-    fieldset { border: 1px solid #243240; border-radius: 8px; padding: 1rem 1.25rem; margin: 0 0 1.25rem; }
-    legend { padding: 0 0.4rem; color: #9aa7b2; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
-    label { display: block; margin: 0 0 0.5rem; font-size: 0.95rem; }
+
+    button { font: inherit; }
+
+    :is(button, input, a, textarea, [tabindex]):focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+      border-radius: var(--radius-sm);
+    }
+
+    /* ---------- App bar ---------- */
+
+    .appbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.7rem 1.5rem;
+      background: rgba(11, 12, 15, 0.92);
+      border-bottom: 1px solid var(--border-soft);
+      -webkit-backdrop-filter: blur(6px);
+      backdrop-filter: blur(6px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+
+    .brand-mark {
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
+      background: linear-gradient(135deg, var(--accent) 0%, #3a6fd8 100%);
+      flex: none;
+    }
+
+    .brand-sub { color: var(--faint); font-weight: 400; font-size: 0.85rem; }
+    .appbar-spacer { flex: 1; }
+    .region { color: var(--faint); font-size: 0.8rem; white-space: nowrap; }
+
+    /* ---------- Layout ---------- */
+
+    .page { max-width: 1200px; margin: 0 auto; padding: 1.75rem 1.5rem 4rem; }
+
+    .lede { margin: 0 0 1.75rem; color: var(--muted); font-size: 0.9rem; }
+    .lede strong { color: var(--text); font-weight: 600; font-size: 1.15rem; display: block; margin-bottom: 0.15rem; }
+
+    .grid-main {
+      display: grid;
+      grid-template-columns: minmax(320px, 5fr) minmax(0, 7fr);
+      gap: 1.25rem;
+      align-items: start;
+    }
+
+    .stack { display: grid; gap: 1.25rem; }
+    .section-gap { margin-top: 1.25rem; }
+
+    @media (max-width: 900px) {
+      .grid-main, .history-grid { grid-template-columns: 1fr; }
+      .appbar { flex-wrap: wrap; gap: 0.5rem 1rem; }
+    }
+
+    /* ---------- Cards ---------- */
+
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+
+    .card-head {
+      display: flex;
+      align-items: baseline;
+      gap: 0.6rem;
+      padding: 0.85rem 1.1rem;
+      border-bottom: 1px solid var(--border-soft);
+    }
+
+    .card-title {
+      margin: 0;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+
+    .card-hint { color: var(--faint); font-size: 0.78rem; margin-left: auto; }
+    .card-body { padding: 1.1rem; }
+
+    .card-amber { border-color: var(--amber-border); }
+    .card-amber .card-head { border-bottom-color: var(--amber-border); }
+    .card-amber .card-title { color: var(--amber); }
+
+    /* ---------- Forms ---------- */
+
+    label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 0.35rem; }
+
     input[type="text"] {
-      width: 100%; box-sizing: border-box; padding: 0.6rem 0.75rem;
-      background: #0b0f14; border: 1px solid #243240; border-radius: 6px;
-      color: #e6e6e6; font-size: 1rem;
-    }
-    .outputs { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.5rem; }
-    .outputs label { display: inline-flex; align-items: center; gap: 0.35rem; margin: 0; color: #cdd6df; }
-    button {
-      padding: 0.6rem 1.4rem; font-size: 1rem; font-weight: 600;
-      background: #2563eb; color: #fff; border: 0; border-radius: 6px; cursor: pointer;
-    }
-    button:disabled { background: #33415a; cursor: not-allowed; }
-    .status { margin: 1rem 0 0; min-height: 1.2rem; color: #9aa7b2; }
-    .status.error { color: #f08a8a; }
-    #timeline { list-style: none; margin: 1.25rem 0 0; padding: 0; }
-    #timeline li {
-      padding: 0.55rem 0.75rem; margin: 0 0 0.4rem; border-radius: 6px;
-      background: #131b24; border-left: 3px solid #2563eb; font-size: 0.92rem;
-    }
-    #timeline li .ts { color: #6b7785; font-variant-numeric: tabular-nums; margin-right: 0.5rem; }
-    #timeline li .agent { color: #6db3f2; font-weight: 600; }
-    #terminal {
-      display: none; margin-top: 1.25rem; padding: 0.85rem 1rem;
-      border-radius: 6px; background: #0e2a1a; border: 1px solid #1f5c39;
-      color: #7fe0a6; font-weight: 600;
-    }
-    #terminal.error { background: #2a0e0e; border-color: #5c1f1f; color: #f0a0a0; }
-    #terminal .terminal-detail { display: block; margin-top: 0.4rem; font-weight: 400; color: #cdd6df; }
-    #terminal .terminal-step { font-weight: 600; color: #f0a0a0; }
-    #escalated {
-      display: none; margin-top: 1.25rem; padding: 1rem 1.25rem;
-      border-radius: 8px; background: #1a1407; border: 1px solid #6b5210;
-      color: #f0c674;
-    }
-    #escalated h2 { margin: 0 0 0.5rem; font-size: 1.1rem; color: #f0c674; }
-    #escalated p { margin: 0 0 0.6rem; color: #cdd6df; }
-    #escalated .escalated-files { margin: 0; padding-left: 1.1rem; color: #cdd6df; }
-    #escalated .escalated-files li { margin: 0 0 0.35rem; }
-    #escalated .escalated-files .reason { color: #9aa7b2; }
-    #approval {
-      display: none; margin-top: 1.25rem; padding: 1rem 1.25rem;
-      border-radius: 8px; background: #1a1407; border: 1px solid #6b5210;
-    }
-    #approval h2 { margin: 0 0 0.5rem; font-size: 1.1rem; color: #f0c674; }
-    #approval .pending { margin: 0 0 0.85rem; padding-left: 1.1rem; color: #cdd6df; }
-    #approval .actions { display: flex; gap: 0.75rem; }
-    #approve-btn { background: #1f8b4c; }
-    #reject-btn { background: #b3392f; }
-    code { color: #6db3f2; }
-    #ideas-search { margin: 0 0 0.75rem; }
-    #ideas-warning {
-      display: none; margin: 0 0 0.75rem; padding: 0.6rem 0.75rem;
-      border-radius: 6px; background: #1a1407; border: 1px solid #6b5210; color: #f0c674;
-      font-size: 0.9rem;
-    }
-    #ideas-list { list-style: none; margin: 0; padding: 0; max-height: 18rem; overflow-y: auto; }
-    #ideas-list li { margin: 0 0 0.4rem; }
-    #ideas-list .idea {
-      display: flex; justify-content: space-between; align-items: baseline; gap: 0.75rem;
-      width: 100%; box-sizing: border-box; text-align: left; cursor: pointer;
-      padding: 0.55rem 0.75rem; border-radius: 6px; font-weight: 400; font-size: 0.92rem;
-      background: #131b24; border: 1px solid #243240; color: #e6e6e6;
-    }
-    #ideas-list .idea:hover, #ideas-list .idea:focus {
-      background: #18222e; border-color: #2563eb; outline: none;
-    }
-    #ideas-list .idea .idea-topic { font-weight: 600; color: #cdd6df; }
-    #ideas-list .idea .idea-meta { color: #6b7785; font-size: 0.82rem; white-space: nowrap; }
-    #ideas-empty { margin: 0; color: #9aa7b2; font-size: 0.9rem; }
-    .runs-layout { display: flex; gap: 1rem; align-items: flex-start; }
-    .runs-col, .files-col { flex: 1 1 0; min-width: 0; }
-    .runs-col-label {
-      margin: 0 0 0.5rem; color: #9aa7b2; font-size: 0.78rem;
-      text-transform: uppercase; letter-spacing: 0.05em;
-    }
-    #runs-list, #run-files-list { list-style: none; margin: 0; padding: 0; max-height: 18rem; overflow-y: auto; }
-    #runs-list li, #run-files-list li { margin: 0 0 0.4rem; }
-    #runs-list .run-item, #run-files-list .run-file {
-      display: block; width: 100%; box-sizing: border-box; text-align: left; cursor: pointer;
-      padding: 0.55rem 0.75rem; border-radius: 6px; font-weight: 400; font-size: 0.92rem;
-      background: #131b24; border: 1px solid #243240; color: #e6e6e6;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    #runs-list .run-item:hover, #runs-list .run-item:focus,
-    #run-files-list .run-file:hover, #run-files-list .run-file:focus {
-      background: #18222e; border-color: #2563eb; outline: none;
-    }
-    #runs-list .run-item.selected {
-      background: #18222e; border-color: #2563eb; border-left: 3px solid #2563eb;
-    }
-    #run-files-list .run-file .file-dir { color: #6b7785; }
-    #runs-empty, #run-files-empty { margin: 0; color: #9aa7b2; font-size: 0.9rem; }
-
-    /* In-app file viewer/editor (#53) */
-    #viewer-panel { display: none; }
-    .viewer-head {
-      display: flex; justify-content: space-between; align-items: center;
-      gap: 0.75rem; flex-wrap: wrap; margin: 0 0 0.75rem;
-    }
-    .viewer-filename {
-      font-weight: 600; color: #cdd6df; font-size: 0.95rem;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
-    }
-    .viewer-filename .file-dir { color: #6b7785; }
-    .viewer-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-    .viewer-actions button {
-      padding: 0.4rem 0.85rem; font-size: 0.85rem; font-weight: 600;
-      background: #243240; color: #e6e6e6; border: 1px solid #2f4456; border-radius: 6px;
-    }
-    .viewer-actions button:hover:not(:disabled) { background: #2c3e50; border-color: #2563eb; }
-    .viewer-actions button.active { background: #18222e; border-color: #2563eb; color: #6db3f2; }
-    .viewer-actions button#viewer-save-btn { background: #1f8b4c; border-color: #1f8b4c; }
-    .viewer-actions button#viewer-save-btn:hover:not(:disabled) { background: #24a259; }
-    .viewer-actions button:disabled { background: #1a232e; border-color: #243240; color: #5a6b7a; cursor: not-allowed; }
-    .viewer-message { margin: 0 0 0.75rem; min-height: 1.2rem; font-size: 0.9rem; color: #7fe0a6; }
-    .viewer-message.error { color: #f08a8a; }
-    .viewer-message:empty { display: none; }
-    .viewer-rendered {
-      background: #0b0f14; border: 1px solid #243240; border-radius: 6px;
-      padding: 0.85rem 1rem; max-height: 28rem; overflow: auto;
-      font-size: 0.95rem; line-height: 1.55; color: #e6e6e6;
-    }
-    .viewer-rendered.plain pre, .viewer-rendered pre {
-      margin: 0; white-space: pre-wrap; word-break: break-word;
-      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-      font-size: 0.88rem; color: #cdd6df;
-    }
-    .viewer-rendered.markdown h1, .viewer-rendered.markdown h2, .viewer-rendered.markdown h3,
-    .viewer-rendered.markdown h4, .viewer-rendered.markdown h5, .viewer-rendered.markdown h6 {
-      margin: 1rem 0 0.5rem; line-height: 1.25; color: #f0f3f6;
-    }
-    .viewer-rendered.markdown h1 { font-size: 1.5rem; border-bottom: 1px solid #243240; padding-bottom: 0.3rem; }
-    .viewer-rendered.markdown h2 { font-size: 1.25rem; border-bottom: 1px solid #1b2530; padding-bottom: 0.25rem; }
-    .viewer-rendered.markdown h3 { font-size: 1.1rem; }
-    .viewer-rendered.markdown > :first-child { margin-top: 0; }
-    .viewer-rendered.markdown p { margin: 0.5rem 0; }
-    .viewer-rendered.markdown ul, .viewer-rendered.markdown ol { margin: 0.5rem 0; padding-left: 1.5rem; }
-    .viewer-rendered.markdown li { margin: 0.2rem 0; }
-    .viewer-rendered.markdown blockquote {
-      margin: 0.5rem 0; padding: 0.1rem 0.9rem; border-left: 3px solid #2563eb;
-      color: #9aa7b2; background: #131b24;
-    }
-    .viewer-rendered.markdown code {
-      background: #131b24; padding: 0.1rem 0.35rem; border-radius: 4px;
-      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-      font-size: 0.85em; color: #6db3f2;
-    }
-    .viewer-rendered.markdown pre {
-      background: #131b24; padding: 0.75rem 0.9rem; border-radius: 6px; overflow-x: auto;
-    }
-    .viewer-rendered.markdown pre code { background: none; padding: 0; color: #cdd6df; }
-    .viewer-rendered.markdown a { color: #6db3f2; }
-    .viewer-rendered.markdown hr { border: 0; border-top: 1px solid #243240; margin: 1rem 0; }
-    .viewer-editor {
-      display: none; width: 100%; box-sizing: border-box; min-height: 18rem; max-height: 28rem;
-      padding: 0.85rem 1rem; background: #0b0f14; border: 1px solid #243240; border-radius: 6px;
-      color: #e6e6e6; font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-      font-size: 0.88rem; line-height: 1.55; resize: vertical;
-    }
-    .viewer-editor:focus { outline: none; border-color: #2563eb; }
-
-    /* MIKE placeholder surfacing (#54) */
-    #viewer-mike {
-      display: none; margin: 0 0 0.75rem; padding: 0.75rem 0.9rem;
-      border-radius: 6px; background: #1a1407; border: 1px solid #6b5210; color: #f0c674;
-    }
-    #viewer-mike h3 { margin: 0 0 0.4rem; font-size: 0.95rem; color: #f0c674; }
-    #viewer-mike ul { margin: 0; padding-left: 1.1rem; }
-    #viewer-mike li { margin: 0 0 0.3rem; color: #e6dcc0; font-size: 0.9rem; }
-    .viewer-rendered .mike-placeholder {
-      margin: 0.6rem 0; padding: 0.55rem 0.85rem; border-radius: 6px;
-      background: #1a1407; border-left: 3px solid #d8a32a; color: #f0c674;
-      font-size: 0.9rem;
-    }
-    .viewer-rendered .mike-placeholder .mike-label {
-      font-weight: 600; color: #f5c451; margin-right: 0.35rem;
-    }
-
-    /* Review + publish panel (#54) */
-    #publish-panel .publish-run {
-      margin: 0 0 0.85rem; font-size: 0.92rem; color: #cdd6df;
-    }
-    #publish-panel .publish-run .run-id { color: #6db3f2; font-weight: 600; }
-    #publish-panel .publish-run .none { color: #9aa7b2; }
-    .legacy-label {
-      margin: 0 0 0.5rem; color: #9aa7b2; font-size: 0.78rem;
-      text-transform: uppercase; letter-spacing: 0.05em;
-    }
-    #legacy-actions { list-style: none; margin: 0 0 1rem; padding: 0; }
-    #legacy-actions:empty { display: none; }
-    #legacy-actions li {
-      display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
-      margin: 0 0 0.4rem; padding: 0.5rem 0.75rem; border-radius: 6px;
-      background: #131b24; border: 1px solid #243240;
-    }
-    #legacy-actions .legacy-name {
-      flex: 1 1 auto; min-width: 0; color: #cdd6df; font-size: 0.9rem;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    #legacy-actions .legacy-name .file-dir { color: #6b7785; }
-    #legacy-actions button {
-      padding: 0.35rem 0.8rem; font-size: 0.82rem; font-weight: 600;
-      background: #243240; color: #e6e6e6; border: 1px solid #2f4456; border-radius: 6px;
-    }
-    #legacy-actions button:hover:not(:disabled) { background: #2c3e50; border-color: #2563eb; }
-    #publish-panel .publish-field { margin: 0 0 0.75rem; }
-    #publish-panel .publish-field label { margin: 0 0 0.35rem; color: #cdd6df; }
-    #publish-panel .publish-hint { color: #6b7785; font-size: 0.82rem; }
-    #publish-panel .publish-toggle {
-      display: inline-flex; align-items: center; gap: 0.4rem; color: #cdd6df; font-size: 0.92rem;
-    }
-    #publish-btn { margin-top: 0.25rem; }
-    #publish-btn:disabled { background: #33415a; cursor: not-allowed; }
-    #publish-result {
-      display: none; margin-top: 1rem; padding: 0.85rem 1rem; border-radius: 6px;
+      width: 100%;
+      padding: 0.55rem 0.75rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
       font-size: 0.92rem;
     }
-    #publish-result.success {
-      background: #0e2a1a; border: 1px solid #1f5c39; color: #7fe0a6;
+
+    input[type="text"]::placeholder { color: var(--faint); }
+    input[type="text"]:focus { border-color: var(--accent); outline: none; }
+
+    .outputs { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.85rem 0 1.1rem; }
+
+    .outputs label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      margin: 0;
+      padding: 0.32rem 0.8rem;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface-2);
+      color: var(--muted);
+      font-size: 0.82rem;
+      cursor: pointer;
+      -webkit-user-select: none;
+      user-select: none;
     }
-    #publish-result.error {
-      background: #2a0e0e; border: 1px solid #5c1f1f; color: #f0a0a0;
+
+    .outputs label:has(input:checked) {
+      border-color: var(--accent-dim);
+      background: rgba(94, 158, 255, 0.1);
+      color: var(--accent);
     }
-    #publish-result a { color: #6db3f2; word-break: break-all; }
-    #publish-result .publish-meta { display: block; margin-top: 0.35rem; color: #cdd6df; font-weight: 400; }
+
+    .outputs label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .outputs input { position: absolute; width: 0; height: 0; opacity: 0; }
+
+    .btn, button#run-btn, button#publish-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.55rem 1.3rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #fff;
+      background: var(--accent);
+      border: 0;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+    }
+
+    button#run-btn:hover, button#publish-btn:hover:not(:disabled) { background: #74acff; }
+    button#run-btn:disabled, button#publish-btn:disabled { background: #33415a; cursor: not-allowed; }
+
+    /* ---------- Status + timeline ---------- */
+
+    .status { margin: 0 0 0.85rem; min-height: 1.2rem; color: var(--muted); font-size: 0.9rem; }
+    .status.error { color: var(--red); }
+
+    #timeline { list-style: none; margin: 0; padding: 0; }
+    #timeline li {
+      padding: 0.5rem 0.75rem;
+      margin: 0 0 0.4rem;
+      border-radius: var(--radius-sm);
+      background: var(--surface-2);
+      border-left: 3px solid var(--accent-dim);
+      font-size: 0.9rem;
+    }
+    #timeline li .ts { color: var(--faint); font-variant-numeric: tabular-nums; margin-right: 0.6rem; font-size: 0.82rem; }
+    #timeline li .agent { color: var(--accent); font-weight: 600; margin-right: 0.3rem; }
+
+    /* Terminal banner. app.js drives this element's className between "" (complete)
+       and "error", and toggles display, so it is styled by id, not by a base class. */
+    #terminal {
+      display: none;
+      margin-top: 1rem;
+      padding: 0.8rem 1rem;
+      border-radius: var(--radius-sm);
+      background: var(--green-bg);
+      border: 1px solid var(--green-border);
+      color: var(--green);
+      font-weight: 600;
+    }
+    #terminal.error { background: var(--red-bg); border-color: var(--red-border); color: var(--red); }
+    #terminal .terminal-detail { display: block; margin-top: 0.4rem; font-weight: 400; color: var(--muted); }
+    #terminal .terminal-step { font-weight: 600; color: var(--red); }
+
+    /* ---------- Approval + escalation ---------- */
+
+    #approval, #escalated { display: none; }
+
+    #approval h2, #escalated h2 { margin: 0 0 0.5rem; font-size: 1rem; color: var(--amber); }
+    #approval p, #escalated p { margin: 0 0 0.85rem; color: var(--muted); font-size: 0.88rem; }
+
+    #approval-files { list-style: none; margin: 0 0 0.95rem; padding: 0; }
+    #approval-files li {
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      padding: 0.45rem 0;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    #approval-files li:last-child { border-bottom: 0; }
+
+    #approval .actions { display: flex; gap: 0.6rem; }
+
+    #approve-btn, #reject-btn {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.5rem 1.1rem;
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: #fff;
+      border: 0;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+    }
+    #approve-btn { background: var(--green); }
+    #approve-btn:hover:not(:disabled) { background: #4cc790; }
+    #reject-btn { background: var(--red); }
+    #reject-btn:hover:not(:disabled) { background: #e87a72; }
+    #approve-btn:disabled, #reject-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    #escalated-files { list-style: none; margin: 0; padding: 0; }
+    #escalated-files li {
+      padding: 0.45rem 0;
+      border-bottom: 1px solid var(--border-soft);
+      font-size: 0.88rem;
+      color: var(--text);
+    }
+    #escalated-files li:last-child { border-bottom: 0; }
+    #escalated-files .reason { color: var(--muted); }
+
+    /* ---------- Topic ideas ---------- */
+
+    #ideas-warning {
+      display: none;
+      margin: 0.75rem 0 0;
+      padding: 0.55rem 0.75rem;
+      border-radius: var(--radius-sm);
+      background: var(--amber-bg);
+      border: 1px solid var(--amber-border);
+      color: var(--amber);
+      font-size: 0.82rem;
+    }
+
+    #ideas-list {
+      list-style: none;
+      margin: 0.85rem 0 0;
+      padding: 0;
+      display: grid;
+      gap: 0.4rem;
+      max-height: 18rem;
+      overflow-y: auto;
+    }
+
+    .idea {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 0.75rem;
+      width: 100%;
+      text-align: left;
+      padding: 0.55rem 0.75rem;
+      background: var(--surface-2);
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 0.88rem;
+    }
+    .idea:hover { border-color: var(--accent-dim); background: #181c24; }
+    .idea-topic { font-weight: 600; color: var(--text); min-width: 0; }
+    .idea-meta { color: var(--faint); font-size: 0.76rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+    #ideas-empty { margin: 0.75rem 0 0; color: var(--faint); font-size: 0.85rem; }
+    #ideas-empty:empty { display: none; }
+
+    /* ---------- Run history ---------- */
+
+    .history-grid {
+      display: grid;
+      grid-template-columns: minmax(260px, 5fr) minmax(0, 7fr);
+      gap: 0;
+    }
+    .history-col { padding: 1.1rem; }
+    .history-col + .history-col { border-left: 1px solid var(--border-soft); }
+    @media (max-width: 900px) {
+      .history-col + .history-col { border-left: 0; border-top: 1px solid var(--border-soft); }
+    }
+
+    .col-label {
+      margin: 0 0 0.6rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--faint);
+    }
+
+    #runs-list, #run-files-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 0.4rem;
+      max-height: 18rem;
+      overflow-y: auto;
+    }
+
+    .run-item, .run-file {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 0.5rem 0.75rem;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      color: var(--muted);
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 0.84rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .run-item:hover, .run-file:hover {
+      background: var(--surface-2);
+      color: var(--text);
+      border-color: var(--border-soft);
+    }
+    .run-item.selected { background: var(--surface-2); border-color: var(--accent-dim); color: var(--text); }
+    .run-file .file-dir { color: var(--faint); }
+    #runs-empty, #run-files-empty { margin: 0.5rem 0 0; color: var(--faint); font-size: 0.85rem; }
+    #runs-empty:empty, #run-files-empty:empty { display: none; }
+
+    /* ---------- File viewer ---------- */
+
+    #viewer-panel { display: none; }
+
+    .viewer-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin: 0 0 0.85rem;
+    }
+
+    #viewer-filename {
+      font-family: var(--mono);
+      font-size: 0.88rem;
+      color: var(--text);
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #viewer-filename .file-dir { color: var(--faint); }
+
+    .viewer-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .viewer-actions button {
+      padding: 0.4rem 0.85rem;
+      font-size: 0.82rem;
+      font-weight: 600;
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+    }
+    .viewer-actions button:hover:not(:disabled) { background: var(--surface-2); border-color: var(--accent-dim); color: var(--accent); }
+    .viewer-actions button.active { background: rgba(94, 158, 255, 0.1); border-color: var(--accent-dim); color: var(--accent); }
+    .viewer-actions button#viewer-save-btn { background: var(--green); border-color: var(--green); color: #fff; }
+    .viewer-actions button#viewer-save-btn:hover:not(:disabled) { background: #4cc790; }
+    .viewer-actions button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .viewer-message { margin: 0 0 0.75rem; min-height: 1.2rem; font-size: 0.88rem; color: var(--green); }
+    .viewer-message.error { color: var(--red); }
+    .viewer-message:empty { display: none; }
+
+    #viewer-mike {
+      display: none;
+      margin: 0 0 0.85rem;
+      padding: 0.7rem 0.9rem;
+      border-radius: var(--radius-sm);
+      background: var(--amber-bg);
+      border: 1px solid var(--amber-border);
+      color: var(--amber);
+    }
+    #viewer-mike h3 { margin: 0 0 0.4rem; font-size: 0.82rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+    #viewer-mike ul { margin: 0; padding-left: 1.1rem; }
+    #viewer-mike li { margin: 0 0 0.25rem; color: var(--text); font-size: 0.85rem; }
+
+    #viewer-rendered {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 0.9rem 1.1rem;
+      max-height: 28rem;
+      overflow: auto;
+      font-size: 0.92rem;
+      line-height: 1.6;
+      color: var(--text);
+    }
+    #viewer-rendered.plain pre, #viewer-rendered pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    #viewer-rendered.markdown h1, #viewer-rendered.markdown h2, #viewer-rendered.markdown h3,
+    #viewer-rendered.markdown h4, #viewer-rendered.markdown h5, #viewer-rendered.markdown h6 {
+      margin: 1rem 0 0.5rem;
+      line-height: 1.25;
+      color: #f0f3f6;
+    }
+    #viewer-rendered.markdown h1 { font-size: 1.5rem; border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
+    #viewer-rendered.markdown h2 { font-size: 1.25rem; border-bottom: 1px solid var(--border-soft); padding-bottom: 0.25rem; }
+    #viewer-rendered.markdown h3 { font-size: 1.1rem; }
+    #viewer-rendered.markdown > :first-child { margin-top: 0; }
+    #viewer-rendered.markdown p { margin: 0.5rem 0; }
+    #viewer-rendered.markdown ul, #viewer-rendered.markdown ol { margin: 0.5rem 0; padding-left: 1.5rem; }
+    #viewer-rendered.markdown li { margin: 0.2rem 0; }
+    #viewer-rendered.markdown blockquote {
+      margin: 0.5rem 0;
+      padding: 0.1rem 0.9rem;
+      border-left: 3px solid var(--accent);
+      color: var(--muted);
+      background: var(--surface-2);
+    }
+    #viewer-rendered.markdown code {
+      background: var(--surface-2);
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+      font-family: var(--mono);
+      font-size: 0.85em;
+      color: var(--accent);
+    }
+    #viewer-rendered.markdown pre { background: var(--surface-2); padding: 0.75rem 0.9rem; border-radius: var(--radius-sm); overflow-x: auto; }
+    #viewer-rendered.markdown pre code { background: none; padding: 0; color: var(--muted); }
+    #viewer-rendered.markdown a { color: var(--accent); }
+    #viewer-rendered.markdown hr { border: 0; border-top: 1px solid var(--border); margin: 1rem 0; }
+
+    #viewer-rendered .mike-placeholder {
+      margin: 0.6rem 0;
+      padding: 0.55rem 0.85rem;
+      border-radius: var(--radius-sm);
+      background: var(--amber-bg);
+      border-left: 3px solid var(--amber);
+      color: var(--amber);
+      font-size: 0.9rem;
+    }
+    #viewer-rendered .mike-placeholder .mike-label { font-weight: 600; color: #f5c451; margin-right: 0.35rem; }
+
+    #viewer-editor {
+      display: none;
+      width: 100%;
+      min-height: 18rem;
+      max-height: 28rem;
+      padding: 0.85rem 1rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      line-height: 1.55;
+      resize: vertical;
+    }
+    #viewer-editor:focus { outline: none; border-color: var(--accent); }
+
+    /* ---------- Review + publish ---------- */
+
+    #publish-run { margin: 0 0 1rem; font-size: 0.88rem; color: var(--muted); }
+    #publish-run .run-id { color: var(--accent); font-weight: 600; font-family: var(--mono); }
+    #publish-run .none { color: var(--faint); }
+
+    #legacy-actions { list-style: none; margin: 0 0 1.1rem; padding: 0; display: grid; gap: 0.4rem; }
+    #legacy-actions:empty { display: none; }
+    #legacy-actions li {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      padding: 0.5rem 0.75rem;
+      border-radius: var(--radius-sm);
+      background: var(--surface-2);
+      border: 1px solid var(--border-soft);
+    }
+    #legacy-actions .legacy-name {
+      flex: 1 1 auto;
+      min-width: 0;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 0.84rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #legacy-actions .legacy-name .file-dir { color: var(--faint); }
+    #legacy-actions button {
+      padding: 0.35rem 0.8rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+    }
+    #legacy-actions button:hover { background: var(--surface); border-color: var(--accent-dim); color: var(--accent); }
+
+    .publish-field { margin: 0 0 0.85rem; }
+    .publish-field label { margin: 0 0 0.35rem; }
+    .publish-hint { display: block; margin-top: 0.3rem; color: var(--faint); font-size: 0.78rem; }
+    .publish-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.88rem;
+      cursor: pointer;
+    }
+
+    #publish-result {
+      display: none;
+      margin-top: 1rem;
+      padding: 0.8rem 1rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.9rem;
+    }
+    #publish-result.success { background: var(--green-bg); border: 1px solid var(--green-border); color: var(--green); }
+    #publish-result.error { background: var(--red-bg); border: 1px solid var(--red-border); color: var(--red); }
+    #publish-result a { color: var(--accent); word-break: break-all; }
+    #publish-result .publish-meta { display: block; margin-top: 0.35rem; color: var(--muted); font-weight: 400; }
   </style>
 </head>
 <body>
-  <main>
-    <h1>Bullpen Console</h1>
-    <p class="tagline">Start a content pipeline Run and watch it stream live.</p>
 
-    <fieldset id="ideas-panel">
-      <legend>Topic Ideas</legend>
-      <label for="ideas-search">Search your vault, or pick a recent topic</label>
-      <input type="text" id="ideas-search" placeholder="Search topics by title..." autocomplete="off">
-      <p id="ideas-warning" role="status" aria-live="polite"></p>
-      <ul id="ideas-list" aria-live="polite"></ul>
-      <p id="ideas-empty"></p>
-    </fieldset>
+<header class="appbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"></span>
+    Bullpen Console
+    <span class="brand-sub">magic-content-engine</span>
+  </div>
+  <div class="appbar-spacer"></div>
+  <span class="region">ap-southeast-2 - Sydney</span>
+</header>
 
-    <form id="run-form">
-      <fieldset>
-        <legend>New Run</legend>
-        <label for="topic">Topic</label>
-        <input type="text" id="topic" name="topic" placeholder="e.g. AgentCore in Sydney" autocomplete="off" required>
-        <div class="outputs" id="outputs">
-          <label><input type="checkbox" value="all" checked> all</label>
-          <label><input type="checkbox" value="blog"> blog</label>
-          <label><input type="checkbox" value="youtube"> youtube</label>
-          <label><input type="checkbox" value="cfp"> cfp</label>
-          <label><input type="checkbox" value="usergroup"> usergroup</label>
-          <label><input type="checkbox" value="digest"> digest</label>
+<main class="page">
+
+  <p class="lede">
+    <strong>Pipeline console</strong>
+    Start a content pipeline run and watch it stream live.
+  </p>
+
+  <div class="grid-main">
+
+    <!-- Left column: topic ideas + new run -->
+    <div class="stack">
+
+      <section class="card" id="ideas-panel" aria-labelledby="ideas-title">
+        <div class="card-head">
+          <h2 class="card-title" id="ideas-title">Topic Ideas</h2>
+          <span class="card-hint">click to pre-fill the run form</span>
         </div>
-      </fieldset>
-      <button type="submit" id="run-btn">Run</button>
-    </form>
+        <div class="card-body">
+          <label for="ideas-search">Search your vault, or pick a recent topic</label>
+          <input type="text" id="ideas-search" placeholder="Search topics by title..." autocomplete="off">
+          <p id="ideas-warning" role="status" aria-live="polite"></p>
+          <ul id="ideas-list" aria-live="polite"></ul>
+          <p id="ideas-empty"></p>
+        </div>
+      </section>
 
-    <p class="status" id="status" role="status" aria-live="polite"></p>
+      <section class="card" aria-labelledby="run-title">
+        <div class="card-head">
+          <h2 class="card-title" id="run-title">New Run</h2>
+        </div>
+        <form class="card-body" id="run-form">
+          <label for="topic">Topic</label>
+          <input type="text" id="topic" name="topic" placeholder="e.g. AgentCore in Sydney" autocomplete="off" required>
+          <div class="outputs" id="outputs">
+            <label><input type="checkbox" value="all" checked> all</label>
+            <label><input type="checkbox" value="blog"> blog</label>
+            <label><input type="checkbox" value="youtube"> youtube</label>
+            <label><input type="checkbox" value="cfp"> cfp</label>
+            <label><input type="checkbox" value="usergroup"> usergroup</label>
+            <label><input type="checkbox" value="digest"> digest</label>
+          </div>
+          <button type="submit" id="run-btn">Run</button>
+        </form>
+      </section>
 
-    <ul id="timeline" aria-live="polite"></ul>
-
-    <div id="approval" role="group" aria-label="Approval gate">
-      <h2>Approval needed</h2>
-      <p>These files earned a publish verdict and are awaiting your decision:</p>
-      <ul class="pending" id="approval-files"></ul>
-      <div class="actions">
-        <button type="button" id="approve-btn">Approve</button>
-        <button type="button" id="reject-btn">Reject</button>
-      </div>
     </div>
 
-    <div id="escalated" role="status" aria-live="polite">
-      <h2>Held for manual review</h2>
-      <p>No file earned a publish verdict. These files were escalated:</p>
-      <ul class="escalated-files" id="escalated-files"></ul>
+    <!-- Right column: live run, gate states -->
+    <div class="stack">
+
+      <section class="card" aria-labelledby="timeline-title">
+        <div class="card-head">
+          <h2 class="card-title" id="timeline-title">Live Run</h2>
+        </div>
+        <div class="card-body">
+          <p class="status" id="status" role="status" aria-live="polite"></p>
+          <ul id="timeline" aria-live="polite"></ul>
+          <div id="terminal" role="status" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <section class="card card-amber" id="approval" role="group" aria-label="Approval gate">
+        <div class="card-body">
+          <h2>Approval needed</h2>
+          <p>These files earned a publish verdict and are awaiting your decision:</p>
+          <ul id="approval-files"></ul>
+          <div class="actions">
+            <button type="button" id="approve-btn">Approve</button>
+            <button type="button" id="reject-btn">Reject</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card card-amber" id="escalated" role="status" aria-live="polite">
+        <div class="card-body">
+          <h2>Held for manual review</h2>
+          <p>No file earned a publish verdict. These files were escalated:</p>
+          <ul id="escalated-files"></ul>
+        </div>
+      </section>
+
     </div>
 
-    <div id="terminal" role="status" aria-live="polite"></div>
+  </div>
 
-    <fieldset id="runs-panel">
-      <legend>Run History</legend>
-      <div class="runs-layout">
-        <div class="runs-col">
-          <p class="runs-col-label">Past runs</p>
-          <ul id="runs-list" aria-live="polite"></ul>
-          <p id="runs-empty"></p>
-        </div>
-        <div class="files-col">
-          <p class="runs-col-label">Files</p>
-          <ul id="run-files-list" aria-live="polite"></ul>
-          <p id="run-files-empty"></p>
-        </div>
+  <!-- Run history -->
+  <section class="card section-gap" aria-labelledby="history-title">
+    <div class="card-head">
+      <h2 class="card-title" id="history-title">Run History</h2>
+    </div>
+    <div class="history-grid">
+      <div class="history-col">
+        <p class="col-label">Past runs</p>
+        <ul id="runs-list" aria-live="polite"></ul>
+        <p id="runs-empty"></p>
       </div>
-    </fieldset>
+      <div class="history-col">
+        <p class="col-label">Files</p>
+        <ul id="run-files-list" aria-live="polite"></ul>
+        <p id="run-files-empty"></p>
+      </div>
+    </div>
+  </section>
 
-    <fieldset id="viewer-panel" aria-label="File viewer">
-      <legend>File Viewer</legend>
+  <!-- File viewer -->
+  <section class="card section-gap" id="viewer-panel" aria-label="File viewer">
+    <div class="card-head">
+      <h2 class="card-title">File Viewer</h2>
+    </div>
+    <div class="card-body">
       <div class="viewer-head">
-        <span class="viewer-filename" id="viewer-filename"></span>
+        <span id="viewer-filename"></span>
         <div class="viewer-actions">
           <button type="button" id="viewer-preview-btn">Preview</button>
           <button type="button" id="viewer-edit-btn">Edit</button>
@@ -331,17 +720,22 @@
         <h3>MIKE sections need your input</h3>
         <ul id="viewer-mike-list"></ul>
       </div>
-      <div class="viewer-rendered" id="viewer-rendered"></div>
-      <textarea class="viewer-editor" id="viewer-editor" spellcheck="false" aria-label="File content editor"></textarea>
-    </fieldset>
+      <div id="viewer-rendered"></div>
+      <textarea id="viewer-editor" spellcheck="false" aria-label="File content editor"></textarea>
+    </div>
+  </section>
 
-    <fieldset id="publish-panel" aria-label="Review and publish">
-      <legend>Review &amp; Publish</legend>
-      <p class="publish-run" id="publish-run">
+  <!-- Review + publish -->
+  <section class="card section-gap" id="publish-panel" aria-label="Review and publish">
+    <div class="card-head">
+      <h2 class="card-title">Review &amp; Publish</h2>
+    </div>
+    <div class="card-body">
+      <p id="publish-run">
         <span class="none">Select a run in Run History to review and publish it.</span>
       </p>
 
-      <p class="legacy-label">Quick actions</p>
+      <p class="col-label">Quick actions</p>
       <ul id="legacy-actions" aria-live="polite"></ul>
 
       <div class="publish-field">
@@ -362,9 +756,11 @@
       <button type="button" id="publish-btn" disabled>Publish to dev.to</button>
 
       <div id="publish-result" role="status" aria-live="polite"></div>
-    </fieldset>
-  </main>
+    </div>
+  </section>
 
-  <script src="/static/app.js"></script>
+</main>
+
+<script src="/static/app.js"></script>
 </body>
 </html>
