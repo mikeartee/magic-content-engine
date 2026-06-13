@@ -1,0 +1,1176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bullpen Console - redesign mockup</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0c0f;
+    --surface: #111318;
+    --surface-2: #16191f;
+    --border: #23262e;
+    --border-soft: #1b1e25;
+    --text: #e8eaed;
+    --muted: #9aa3af;
+    --faint: #646c78;
+    --accent: #5e9eff;
+    --accent-dim: #2b4a7a;
+    --green: #3fb37f;
+    --green-bg: #0e2018;
+    --green-border: #1f4a36;
+    --amber: #d9a13b;
+    --amber-bg: #201a0d;
+    --amber-border: #4a3c1a;
+    --red: #e0635a;
+    --red-bg: #211010;
+    --red-border: #4a2220;
+    --radius: 8px;
+    --radius-sm: 6px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  button { font: inherit; }
+
+  :is(button, input, a, [tabindex]):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* ---------- App bar ---------- */
+
+  .appbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.7rem 1.5rem;
+    background: rgba(11, 12, 15, 0.92);
+    border-bottom: 1px solid var(--border-soft);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-weight: 600;
+    font-size: 0.95rem;
+    letter-spacing: 0.01em;
+  }
+
+  .brand-mark {
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    background: linear-gradient(135deg, var(--accent) 0%, #3a6fd8 100%);
+    flex: none;
+  }
+
+  .brand-sub { color: var(--faint); font-weight: 400; font-size: 0.85rem; }
+
+  .appbar-spacer { flex: 1; }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    font-size: 0.8rem;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .dot-live { background: var(--accent); animation: pulse 1.6s ease-in-out infinite; }
+  .dot-green { background: var(--green); }
+  .dot-amber { background: var(--amber); }
+  .dot-red { background: var(--red); }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+
+  a.pill-attn {
+    background: var(--amber-bg);
+    border-color: var(--amber-border);
+    color: var(--amber);
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  a.pill-attn:hover { border-color: var(--amber); }
+
+  .region { color: var(--faint); font-size: 0.8rem; white-space: nowrap; }
+
+  /* ---------- Layout ---------- */
+
+  .page {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 1.75rem 1.5rem 4rem;
+  }
+
+  .lede { margin: 0 0 1.75rem; color: var(--muted); font-size: 0.9rem; }
+  .lede strong { color: var(--text); font-weight: 600; font-size: 1.15rem; display: block; margin-bottom: 0.15rem; }
+
+  .grid-main {
+    display: grid;
+    grid-template-columns: minmax(320px, 5fr) minmax(0, 7fr);
+    gap: 1.25rem;
+    align-items: start;
+  }
+
+  .stack { display: grid; gap: 1.25rem; }
+
+  .grid-gates {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem;
+    margin-top: 1.25rem;
+  }
+
+  @media (max-width: 900px) {
+    .grid-main, .grid-gates, .history-grid, .grid-review { grid-template-columns: 1fr; }
+    .kpis { grid-template-columns: 1fr 1fr; }
+    .appbar { flex-wrap: wrap; gap: 0.5rem 1rem; }
+  }
+
+  /* ---------- KPI strip ---------- */
+
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.25rem;
+    margin: 0 0 1.25rem;
+  }
+
+  .kpi {
+    display: block;
+    padding: 0.8rem 1.1rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    text-decoration: none;
+  }
+
+  .kpi-num {
+    display: block;
+    font-size: 1.9rem;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  .kpi-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--faint);
+  }
+
+  a.kpi-amber { background: var(--amber-bg); border-color: var(--amber-border); cursor: pointer; }
+  a.kpi-amber .kpi-num, a.kpi-amber .kpi-label { color: var(--amber); }
+  a.kpi-amber:hover { border-color: var(--amber); }
+
+  /* ---------- Cards ---------- */
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  .card-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    padding: 0.85rem 1.1rem;
+    border-bottom: 1px solid var(--border-soft);
+  }
+
+  .card-title {
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+
+  .card-hint { color: var(--faint); font-size: 0.78rem; margin-left: auto; }
+
+  .card-body { padding: 1.1rem; }
+
+  .count-badge {
+    font-size: 0.72rem;
+    color: var(--muted);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.05rem 0.5rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- Forms ---------- */
+
+  label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 0.35rem; }
+
+  input[type="text"] {
+    width: 100%;
+    padding: 0.55rem 0.75rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 0.92rem;
+  }
+
+  input[type="text"]::placeholder { color: var(--faint); }
+  input[type="text"]:focus { border-color: var(--accent); outline: none; }
+
+  .outputs { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.85rem 0 1.1rem; }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.32rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--muted);
+    font-size: 0.82rem;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .chip input { position: absolute; opacity: 0; pointer-events: none; }
+
+  .chip.checked {
+    border-color: var(--accent-dim);
+    background: rgba(94, 158, 255, 0.1);
+    color: var(--accent);
+  }
+
+  .chip.checked::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.55rem 1.3rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #fff;
+    background: var(--accent);
+    border: 0;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+
+  .btn:hover { background: #74acff; }
+
+  .btn-sm { padding: 0.3rem 0.8rem; font-size: 0.8rem; font-weight: 500; }
+
+  .btn-green { background: var(--green); }
+  .btn-green:hover { background: #4cc790; }
+  .btn-red { background: var(--red); }
+  .btn-red:hover { background: #e87a72; }
+
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-weight: 500;
+  }
+  .btn-ghost:hover { background: var(--surface-2); border-color: var(--accent-dim); color: var(--accent); }
+
+  /* ---------- Topic ideas ---------- */
+
+  .notice {
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+    margin: 0.75rem 0 0;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--radius-sm);
+    background: var(--amber-bg);
+    border: 1px solid var(--amber-border);
+    color: var(--amber);
+    font-size: 0.82rem;
+  }
+
+  .notice .dot { align-self: center; }
+
+  .ideas-list { list-style: none; margin: 0.85rem 0 0; padding: 0; display: grid; gap: 0.4rem; max-height: 16rem; overflow-y: auto; }
+
+  .idea {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.75rem;
+    width: 100%;
+    text-align: left;
+    padding: 0.55rem 0.75rem;
+    background: var(--surface-2);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 0.88rem;
+  }
+
+  .idea:hover { border-color: var(--accent-dim); background: #181c24; }
+
+  .idea-meta { color: var(--faint); font-size: 0.75rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+  .empty {
+    margin: 0.85rem 0 0;
+    padding: 1.1rem 0.75rem;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--faint);
+    font-size: 0.85rem;
+    text-align: center;
+  }
+
+  /* ---------- Timeline ---------- */
+
+  .timeline { list-style: none; margin: 0; padding: 0; }
+
+  .event {
+    display: grid;
+    grid-template-columns: 4.6rem 1.1rem 1fr;
+    gap: 0 0.6rem;
+    position: relative;
+    padding: 0.42rem 0;
+    font-size: 0.88rem;
+  }
+
+  .event .ts {
+    color: var(--faint);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.8rem;
+    line-height: 1.7;
+  }
+
+  .event .node {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    padding-top: 0.5rem;
+  }
+
+  .event .node::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: -0.42rem;
+    width: 1px;
+    background: var(--border);
+  }
+
+  .event:first-child .node::before { top: 0.5rem; }
+  .event:last-child .node::before { bottom: auto; height: 0.5rem; }
+
+  .event .node .dot {
+    position: relative;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+    border: 1px solid var(--faint);
+    flex: none;
+  }
+
+  .event.done .node .dot { background: var(--accent-dim); border-color: var(--accent); }
+  .event.active .node .dot { background: var(--accent); border-color: var(--accent); animation: pulse 1.6s ease-in-out infinite; }
+  .event.warn .node .dot { background: var(--amber); border-color: var(--amber); }
+
+  .event .what { min-width: 0; }
+  .event .agent { font-weight: 600; color: var(--accent); margin-right: 0.5rem; }
+  .event .etype {
+    color: var(--faint);
+    font-size: 0.75rem;
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  .event .detail { display: block; color: var(--muted); font-size: 0.82rem; }
+  .event.warn .agent { color: var(--amber); }
+
+  /* Collapsed group of routine events: milestones stay visible, chatter folds away */
+  .event-group summary {
+    display: grid;
+    grid-template-columns: 4.6rem 1.1rem 1fr;
+    gap: 0 0.6rem;
+    padding: 0.42rem 0;
+    cursor: pointer;
+    list-style: none;
+    color: var(--faint);
+    font-size: 0.8rem;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .event-group summary::-webkit-details-marker { display: none; }
+  .event-group summary:hover { color: var(--muted); }
+
+  .event-group .rail-gap { position: relative; display: flex; justify-content: center; }
+  .event-group .rail-gap::before {
+    content: "";
+    position: absolute;
+    top: -0.42rem;
+    bottom: -0.42rem;
+    width: 0;
+    border-left: 1px dashed var(--faint);
+    opacity: 0.55;
+  }
+
+  .event-group details[open] summary .when-closed { display: none; }
+  .event-group details:not([open]) summary .when-open { display: none; }
+
+  /* ---------- Gate / escalation ---------- */
+
+  .file-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--border-soft);
+  }
+
+  .file-row:last-child { border-bottom: 0; padding-bottom: 0; }
+  .file-row:first-child { padding-top: 0; }
+
+  .filename {
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 0.85rem;
+    color: var(--text);
+  }
+
+  .filename .dir { color: var(--faint); }
+
+  .file-row .reason { color: var(--muted); font-size: 0.8rem; flex: 1; min-width: 0; }
+  .file-row .actions { margin-left: auto; display: flex; gap: 0.5rem; flex: none; }
+
+  .card-amber { border-color: var(--amber-border); }
+  .card-amber .card-head { border-bottom-color: var(--amber-border); }
+  .card-amber .card-title { color: var(--amber); }
+
+  /* ---------- Terminal banners ---------- */
+
+  .banner {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    margin-top: 1.25rem;
+    padding: 0.8rem 1.1rem;
+    border-radius: var(--radius);
+    font-weight: 600;
+    font-size: 0.92rem;
+  }
+
+  .banner .dot { width: 8px; height: 8px; align-self: center; }
+  .banner-ok { background: var(--green-bg); border: 1px solid var(--green-border); color: var(--green); }
+  .banner-err { background: var(--red-bg); border: 1px solid var(--red-border); color: var(--red); }
+  .banner .detail { font-weight: 400; color: var(--muted); font-size: 0.85rem; }
+  .banner .detail code {
+    color: var(--text);
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 0.82rem;
+  }
+
+  /* ---------- Run history ---------- */
+
+  .history-grid {
+    display: grid;
+    grid-template-columns: minmax(280px, 5fr) minmax(0, 7fr);
+    gap: 0;
+  }
+
+  .history-col { padding: 1.1rem; }
+  .history-col + .history-col { border-left: 1px solid var(--border-soft); }
+  @media (max-width: 900px) {
+    .history-col + .history-col { border-left: 0; border-top: 1px solid var(--border-soft); }
+  }
+
+  .col-label {
+    margin: 0 0 0.6rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--faint);
+  }
+
+  .runs { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+
+  .run-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    width: 100%;
+    text-align: left;
+    padding: 0.55rem 0.75rem;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.88rem;
+  }
+
+  .run-item:hover { background: var(--surface-2); color: var(--text); }
+
+  .run-item.selected {
+    background: var(--surface-2);
+    border-color: var(--accent-dim);
+    color: var(--text);
+  }
+
+  .run-item .run-date { font-variant-numeric: tabular-nums; color: var(--faint); font-size: 0.8rem; flex: none; }
+  .run-item.selected .run-date { color: var(--accent); }
+
+  /* ---------- File viewer + publish ---------- */
+
+  .grid-review {
+    display: grid;
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    gap: 1.25rem;
+    margin-top: 1.25rem;
+    align-items: start;
+  }
+
+  .viewer-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin: 0 0 0.85rem;
+  }
+
+  .viewer-filename {
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 0.88rem;
+    color: var(--text);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .viewer-filename .dir { color: var(--faint); }
+
+  .viewer-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+  .btn-ghost.active {
+    border-color: var(--accent-dim);
+    background: rgba(94, 158, 255, 0.1);
+    color: var(--accent);
+  }
+
+  .mike-note {
+    margin: 0 0 0.85rem;
+    padding: 0.7rem 0.9rem;
+    border-radius: var(--radius-sm);
+    background: var(--amber-bg);
+    border: 1px solid var(--amber-border);
+    color: var(--amber);
+  }
+
+  .mike-note h3 {
+    margin: 0 0 0.4rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .mike-note ul { margin: 0; padding-left: 1.1rem; }
+  .mike-note li { margin: 0 0 0.25rem; color: var(--text); font-size: 0.85rem; }
+
+  .viewer-rendered {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.9rem 1.1rem;
+    max-height: 24rem;
+    overflow: auto;
+    font-size: 0.92rem;
+    line-height: 1.6;
+    color: var(--text);
+  }
+
+  .viewer-rendered > :first-child { margin-top: 0; }
+  .viewer-rendered h2 {
+    margin: 1.1rem 0 0.5rem;
+    font-size: 1.1rem;
+    color: #f0f3f6;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.25rem;
+  }
+  .viewer-rendered p { margin: 0.5rem 0; }
+  .viewer-rendered code {
+    background: var(--surface-2);
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 0.85em;
+    color: var(--accent);
+  }
+
+  .mike-inline {
+    margin: 0.6rem 0;
+    padding: 0.5rem 0.85rem;
+    border-radius: var(--radius-sm);
+    background: var(--amber-bg);
+    border-left: 3px solid var(--amber);
+    color: var(--amber);
+    font-size: 0.88rem;
+  }
+  .mike-inline .mike-label { font-weight: 600; margin-right: 0.35rem; }
+
+  .publish-field { margin: 0 0 0.85rem; }
+  .publish-hint { display: block; margin-top: 0.3rem; color: var(--faint); font-size: 0.78rem; }
+  .publish-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    color: var(--muted);
+    font-size: 0.88rem;
+    margin: 0;
+    cursor: pointer;
+  }
+
+  .publish-run { margin: 0 0 1rem; font-size: 0.88rem; color: var(--muted); }
+  .publish-run .run-id { color: var(--accent); font-weight: 600; }
+
+  .quick-actions { display: grid; gap: 0.4rem; margin: 0 0 1.1rem; }
+  .quick-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--surface-2);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-sm);
+  }
+  .quick-row .filename { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .publish-result {
+    margin-top: 1rem;
+    padding: 0.8rem 1rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.9rem;
+    background: var(--green-bg);
+    border: 1px solid var(--green-border);
+    color: var(--green);
+  }
+  .publish-result a { color: var(--accent); word-break: break-all; }
+  .publish-result .publish-meta { display: block; margin-top: 0.35rem; color: var(--muted); }
+
+  /* ---------- Comp annotations (mockup only) ---------- */
+
+  .comp-note {
+    display: inline-block;
+    margin: 0 0 0.5rem;
+    padding: 0.1rem 0.5rem;
+    border: 1px dashed var(--faint);
+    border-radius: 4px;
+    color: var(--faint);
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .comp-block { margin-top: 1.25rem; }
+  .comp-block > .empty,
+  .comp-block > .banner { margin-top: 0; }
+
+  .section-gap { margin-top: 1.25rem; }
+</style>
+</head>
+<body>
+
+<header class="appbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"></span>
+    Bullpen Console
+    <span class="brand-sub">magic-content-engine</span>
+  </div>
+  <div class="appbar-spacer"></div>
+  <a class="pill pill-attn" href="#approval-gate">
+    <span class="dot dot-amber" aria-hidden="true"></span>
+    2 files need your decision
+  </a>
+  <span class="pill" role="status" aria-live="polite">
+    <span class="dot dot-live" aria-hidden="true"></span>
+    Run in progress
+  </span>
+  <span class="region">ap-southeast-2 - Sydney - 21:14 NZST</span>
+</header>
+
+<main class="page">
+
+  <p class="lede">
+    <strong>Monday pipeline run</strong>
+    Start a content pipeline run and watch it stream live. Weekly schedule fires Monday 09:00 UTC.
+  </p>
+
+  <section class="kpis" aria-label="Current run at a glance">
+    <div class="kpi">
+      <span class="kpi-num">47</span>
+      <span class="kpi-label">articles crawled</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-num">12</span>
+      <span class="kpi-label">scored above 0.70</span>
+    </div>
+    <a class="kpi kpi-amber" href="#approval-gate" aria-label="2 files need your decision, jump to approval gate">
+      <span class="kpi-num">2</span>
+      <span class="kpi-label">need your decision</span>
+    </a>
+    <div class="kpi">
+      <span class="kpi-num">4m 53s</span>
+      <span class="kpi-label">run time so far</span>
+    </div>
+  </section>
+
+  <div class="grid-main">
+
+    <!-- Left column: topic ideas + new run -->
+    <div class="stack">
+
+      <section class="card" aria-labelledby="ideas-title">
+        <div class="card-head">
+          <h2 class="card-title" id="ideas-title">Topic Ideas</h2>
+          <span class="count-badge">5</span>
+          <span class="card-hint">click to pre-fill the run form</span>
+        </div>
+        <div class="card-body">
+          <label for="ideas-search">Search your vault</label>
+          <input type="text" id="ideas-search" placeholder="Search topics by title..." autocomplete="off">
+
+          <p class="notice" role="status" aria-live="polite">
+            <span class="dot dot-amber" aria-hidden="true"></span>
+            Vault index is 4 days stale - last synced 2026-06-09 07:12 UTC.
+          </p>
+
+          <ul class="ideas-list" aria-live="polite">
+            <li>
+              <button type="button" class="idea">
+                <span>AgentCore Memory vs DynamoDB for agent state</span>
+                <span class="idea-meta">2026-06-11 - vault</span>
+              </button>
+            </li>
+            <li>
+              <button type="button" class="idea">
+                <span>Bedrock cross-region inference from ap-southeast-2</span>
+                <span class="idea-meta">2026-06-10 - community.aws</span>
+              </button>
+            </li>
+            <li>
+              <button type="button" class="idea">
+                <span>Kiro steering files as a pipeline voice contract</span>
+                <span class="idea-meta">2026-06-08 - vault</span>
+              </button>
+            </li>
+            <li>
+              <button type="button" class="idea">
+                <span>Strands Agents SDK: first look from NZ</span>
+                <span class="idea-meta">2026-06-05 - github</span>
+              </button>
+            </li>
+            <li>
+              <button type="button" class="idea">
+                <span>EventBridge Scheduler for weekly content pipelines</span>
+                <span class="idea-meta">2026-06-02 - vault</span>
+              </button>
+            </li>
+          </ul>
+
+          <!-- Mockup only: empty-state variant shown alongside the populated list -->
+          <div class="comp-block">
+            <p class="comp-note">Empty state variant</p>
+            <p class="empty">No topics match "kinesis". Clear the search or add ideas to your vault.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="run-title">
+        <div class="card-head">
+          <h2 class="card-title" id="run-title">New Run</h2>
+        </div>
+        <form class="card-body" id="run-form">
+          <label for="topic">Topic</label>
+          <input type="text" id="topic" name="topic" value="AgentCore Memory vs DynamoDB for agent state" autocomplete="off" required>
+
+          <div class="outputs" role="group" aria-label="Output types">
+            <label class="chip checked"><input type="checkbox" value="all" checked>all</label>
+            <label class="chip"><input type="checkbox" value="blog">blog</label>
+            <label class="chip"><input type="checkbox" value="youtube">youtube</label>
+            <label class="chip"><input type="checkbox" value="cfp">cfp</label>
+            <label class="chip"><input type="checkbox" value="usergroup">usergroup</label>
+            <label class="chip"><input type="checkbox" value="digest">digest</label>
+          </div>
+
+          <button type="submit" class="btn">Run</button>
+        </form>
+      </section>
+
+    </div>
+
+    <!-- Right column: live timeline -->
+    <section class="card" aria-labelledby="timeline-title">
+      <div class="card-head">
+        <h2 class="card-title" id="timeline-title">Live Run</h2>
+        <span class="count-badge">run-2026-06-13-0914</span>
+        <span class="card-hint">streaming</span>
+      </div>
+      <div class="card-body">
+        <ul class="timeline" aria-live="polite">
+          <li class="event done">
+            <span class="ts">09:14:02</span>
+            <span class="node"><span class="dot" aria-hidden="true"></span></span>
+            <span class="what">
+              <span class="agent">researcher</span><span class="etype">run.started</span>
+              <span class="detail">Topic: AgentCore Memory vs DynamoDB for agent state</span>
+            </span>
+          </li>
+          <li class="event-group">
+            <details>
+              <summary>
+                <span class="ts" aria-hidden="true"></span>
+                <span class="rail-gap" aria-hidden="true"></span>
+                <span>
+                  <span class="when-closed">5 routine events from researcher, writer, desk-editor - show</span>
+                  <span class="when-open">routine events - hide</span>
+                </span>
+              </summary>
+              <ul class="timeline">
+                <li class="event done">
+                  <span class="ts">09:14:19</span>
+                  <span class="node"><span class="dot" aria-hidden="true"></span></span>
+                  <span class="what">
+                    <span class="agent">researcher</span><span class="etype">sources.crawled</span>
+                    <span class="detail">9 sources crawled, 47 articles collected</span>
+                  </span>
+                </li>
+                <li class="event done">
+                  <span class="ts">09:15:04</span>
+                  <span class="node"><span class="dot" aria-hidden="true"></span></span>
+                  <span class="what">
+                    <span class="agent">researcher</span><span class="etype">articles.scored</span>
+                    <span class="detail">Haiku scored 47 articles, 12 above threshold 0.70</span>
+                  </span>
+                </li>
+                <li class="event done">
+                  <span class="ts">09:15:41</span>
+                  <span class="node"><span class="dot" aria-hidden="true"></span></span>
+                  <span class="what">
+                    <span class="agent">writer</span><span class="etype">draft.created</span>
+                    <span class="detail">blog/post.md drafted, 1,840 words</span>
+                  </span>
+                </li>
+                <li class="event done">
+                  <span class="ts">09:16:58</span>
+                  <span class="node"><span class="dot" aria-hidden="true"></span></span>
+                  <span class="what">
+                    <span class="agent">writer</span><span class="etype">draft.created</span>
+                    <span class="detail">youtube/script.md drafted, 9 min runtime estimate</span>
+                  </span>
+                </li>
+                <li class="event done">
+                  <span class="ts">09:17:22</span>
+                  <span class="node"><span class="dot" aria-hidden="true"></span></span>
+                  <span class="what">
+                    <span class="agent">desk-editor</span><span class="etype">edit.pass.completed</span>
+                    <span class="detail">Structure pass: 3 sections reordered, intro tightened</span>
+                  </span>
+                </li>
+              </ul>
+            </details>
+          </li>
+          <li class="event warn">
+            <span class="ts">09:17:49</span>
+            <span class="node"><span class="dot" aria-hidden="true"></span></span>
+            <span class="what">
+              <span class="agent">desk-editor</span><span class="etype">citation.flagged</span>
+              <span class="detail">cfp/proposal.md: citation confidence 0.61, below 0.75</span>
+            </span>
+          </li>
+          <li class="event done">
+            <span class="ts">09:18:13</span>
+            <span class="node"><span class="dot" aria-hidden="true"></span></span>
+            <span class="what">
+              <span class="agent">subeditor</span><span class="etype">voice.checked</span>
+              <span class="detail">Steering rules applied, 2 voice fixes in blog/post.md</span>
+            </span>
+          </li>
+          <li class="event done">
+            <span class="ts">09:18:40</span>
+            <span class="node"><span class="dot" aria-hidden="true"></span></span>
+            <span class="what">
+              <span class="agent">editor-in-chief</span><span class="etype">gate.verdict</span>
+              <span class="detail">publish: blog/post.md, youtube/script.md - hold: cfp/proposal.md</span>
+            </span>
+          </li>
+          <li class="event active">
+            <span class="ts">09:18:55</span>
+            <span class="node"><span class="dot" aria-hidden="true"></span></span>
+            <span class="what">
+              <span class="agent">publisher</span><span class="etype">approval.waiting</span>
+              <span class="detail">2 files awaiting your decision below</span>
+            </span>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Gates row -->
+  <div class="grid-gates">
+
+    <section class="card card-amber" id="approval-gate" role="group" aria-label="Approval gate">
+      <div class="card-head">
+        <h2 class="card-title">Approval Needed</h2>
+        <span class="count-badge">2</span>
+        <span class="card-hint">earned a publish verdict</span>
+      </div>
+      <div class="card-body">
+        <div class="file-row">
+          <span class="filename"><span class="dir">blog/</span>post.md</span>
+          <span class="actions">
+            <button type="button" class="btn btn-sm btn-green">Approve</button>
+            <button type="button" class="btn btn-sm btn-red">Reject</button>
+          </span>
+        </div>
+        <div class="file-row">
+          <span class="filename"><span class="dir">youtube/</span>script.md</span>
+          <span class="actions">
+            <button type="button" class="btn btn-sm btn-green">Approve</button>
+            <button type="button" class="btn btn-sm btn-red">Reject</button>
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card card-amber" role="status" aria-live="polite" aria-label="Held for manual review">
+      <div class="card-head">
+        <h2 class="card-title">Held for Manual Review</h2>
+        <span class="count-badge">2</span>
+        <span class="card-hint">escalated by the gate</span>
+      </div>
+      <div class="card-body">
+        <div class="file-row">
+          <span class="filename"><span class="dir">cfp/</span>proposal.md</span>
+          <span class="reason">citation confidence below threshold (0.61 &lt; 0.75)</span>
+        </div>
+        <div class="file-row">
+          <span class="filename"><span class="dir">usergroup/</span>session.md</span>
+          <span class="reason">voice rule violation: second-person address in abstract</span>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Terminal state banners: both variants shown for the comp -->
+  <div class="comp-block">
+    <p class="comp-note">Terminal state - success variant</p>
+    <div class="banner banner-ok" role="status" aria-live="polite">
+      <span class="dot dot-green" aria-hidden="true"></span>
+      Run complete.
+      <span class="detail">4 files written to s3://magic-content-dev/output/ in 6m 12s.</span>
+    </div>
+  </div>
+
+  <div class="comp-block">
+    <p class="comp-note">Terminal state - error variant</p>
+    <div class="banner banner-err" role="status" aria-live="polite">
+      <span class="dot dot-red" aria-hidden="true"></span>
+      Run failed.
+      <span class="detail">Step 14 of 20, <code>publisher.s3_upload</code>: AccessDenied on s3://magic-content-dev/output/.</span>
+    </div>
+  </div>
+
+  <!-- Run history -->
+  <section class="card section-gap" aria-labelledby="history-title">
+    <div class="card-head">
+      <h2 class="card-title" id="history-title">Run History</h2>
+      <span class="count-badge">4</span>
+    </div>
+    <div class="history-grid">
+
+      <div class="history-col">
+        <p class="col-label">Past runs</p>
+        <ul class="runs" aria-live="polite">
+          <li>
+            <button type="button" class="run-item selected" aria-current="true">
+              <span class="run-date">2026-06-08</span>
+              <span>AgentCore in Sydney</span>
+            </button>
+          </li>
+          <li>
+            <button type="button" class="run-item">
+              <span class="run-date">2026-06-01</span>
+              <span>Bedrock prompt caching deep dive</span>
+            </button>
+          </li>
+          <li>
+            <button type="button" class="run-item">
+              <span class="run-date">2026-05-25</span>
+              <span>Weekly digest: AWS NZ updates</span>
+            </button>
+          </li>
+          <li>
+            <button type="button" class="run-item">
+              <span class="run-date">2026-05-18</span>
+              <span>Strands Agents SDK first look</span>
+            </button>
+          </li>
+        </ul>
+      </div>
+
+      <div class="history-col">
+        <p class="col-label">Files - 2026-06-08 - AgentCore in Sydney</p>
+        <div class="file-row">
+          <span class="filename"><span class="dir">blog/</span>post.md</span>
+          <span class="actions">
+            <button type="button" class="btn btn-sm btn-ghost">Publish to dev.to</button>
+          </span>
+        </div>
+        <div class="file-row">
+          <span class="filename"><span class="dir">youtube/</span>script.md</span>
+        </div>
+        <div class="file-row">
+          <span class="filename"><span class="dir">cfp/</span>proposal.md</span>
+        </div>
+        <div class="file-row">
+          <span class="filename"><span class="dir">digest/</span>email.md</span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- File viewer + Review & publish -->
+  <div class="grid-review">
+
+    <section class="card" aria-labelledby="viewer-title">
+      <div class="card-head">
+        <h2 class="card-title" id="viewer-title">File Viewer</h2>
+        <span class="card-hint">blog/post.md</span>
+      </div>
+      <div class="card-body">
+        <div class="viewer-head">
+          <span class="viewer-filename"><span class="dir">blog/</span>post.md</span>
+          <span class="viewer-actions">
+            <button type="button" class="btn btn-sm btn-ghost active">Preview</button>
+            <button type="button" class="btn btn-sm btn-ghost">Edit</button>
+            <button type="button" class="btn btn-sm btn-green">Save</button>
+            <button type="button" class="btn btn-sm btn-ghost">Download</button>
+          </span>
+        </div>
+
+        <div class="mike-note" role="status">
+          <h3>MIKE sections need your input</h3>
+          <ul>
+            <li>Personal anecdote: your first AgentCore deployment in Sydney</li>
+            <li>Call to action: link to your user group signup</li>
+          </ul>
+        </div>
+
+        <div class="viewer-rendered">
+          <h2>AgentCore Memory vs DynamoDB for agent state</h2>
+          <p>When you build an agent that needs to remember things between turns, the
+          first decision is where that state lives. AWS gives you two natural homes in
+          <code>ap-southeast-2</code>: managed AgentCore Memory, or a DynamoDB table you
+          run yourself.</p>
+          <div class="mike-inline"><span class="mike-label">MIKE:</span> Personal anecdote - your first AgentCore deployment in Sydney</div>
+          <p>The trade-off comes down to how much of the retrieval and summarisation you
+          want to own. AgentCore Memory handles session and long-term recall for you;
+          DynamoDB hands you the primitives and the bill.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="publish-title">
+      <div class="card-head">
+        <h2 class="card-title" id="publish-title">Review &amp; Publish</h2>
+      </div>
+      <div class="card-body">
+        <p class="publish-run">Reviewing <span class="run-id">run-2026-06-08</span> - AgentCore in Sydney</p>
+
+        <p class="col-label">Quick actions</p>
+        <div class="quick-actions">
+          <div class="quick-row">
+            <span class="filename"><span class="dir">blog/</span>post.md</span>
+            <button type="button" class="btn btn-sm btn-ghost">Open</button>
+          </div>
+        </div>
+
+        <div class="publish-field">
+          <label for="publish-title-input">Title</label>
+          <input type="text" id="publish-title-input" value="AgentCore Memory vs DynamoDB for agent state" autocomplete="off">
+        </div>
+        <div class="publish-field">
+          <label for="publish-tags-input">Tags</label>
+          <input type="text" id="publish-tags-input" value="aws, agentcore, bedrock" autocomplete="off">
+          <span class="publish-hint">Comma-separated, e.g. aws, kiro, agentcore</span>
+        </div>
+        <div class="publish-field">
+          <label class="publish-toggle">
+            <input type="checkbox">
+            Publish live now (leave unchecked to save as a draft)
+          </label>
+        </div>
+        <button type="button" class="btn">Publish to dev.to</button>
+
+        <div class="publish-result" role="status">
+          Draft saved to dev.to.
+          <span class="publish-meta">Edit at <a href="#">dev.to/mikefromnz/agentcore-memory-vs-dynamodb-temp</a></span>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+</main>
+
+</body>
+</html>
