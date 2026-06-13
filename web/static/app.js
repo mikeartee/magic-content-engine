@@ -546,6 +546,9 @@
     selectedRunBtn = btn;
     btn.classList.add("selected");
     renderRunFiles(run.id, run.files);
+    // #54: the selected run becomes the publish target and drives the legacy
+    // quick-action helpers. onRunSelected is hoisted from the publish section.
+    onRunSelected(run);
   }
 
   // renderRuns paints the run history list, newest first. The API already sorts
@@ -561,6 +564,9 @@
     runFilesList.innerHTML = "";
     runFilesEmpty.textContent = "";
     selectedRunBtn = null;
+    // #54: clearing the run list also clears the publish target until a run is
+    // selected again. resetPublishPanel is hoisted from the publish section.
+    resetPublishPanel();
 
     if (runs.length === 0) {
       runsEmpty.textContent = "No runs yet. Start one above to see it here.";
@@ -615,6 +621,8 @@
   var viewerPanel = document.getElementById("viewer-panel");
   var viewerFilename = document.getElementById("viewer-filename");
   var viewerMessage = document.getElementById("viewer-message");
+  var viewerMike = document.getElementById("viewer-mike");
+  var viewerMikeList = document.getElementById("viewer-mike-list");
   var viewerRendered = document.getElementById("viewer-rendered");
   var viewerEditor = document.getElementById("viewer-editor");
   var viewerPreviewBtn = document.getElementById("viewer-preview-btn");
@@ -698,6 +706,17 @@
 
       if (/^\s*$/.test(line)) { closeList(); continue; }
 
+      // MIKE placeholder lines (<!-- MIKE: ... -->) are surfaced as a visible
+      // callout instead of rendering as literal text, so the human reviewer
+      // cannot miss the sections they own (#54). The instruction text is already
+      // HTML-escaped by escapeHtml above, so it is inert here.
+      var mike = line.match(/^\s*&lt;!--\s*MIKE:\s*([\s\S]*?)\s*--&gt;\s*$/);
+      if (mike) {
+        closeList();
+        html.push('<div class="mike-placeholder"><span class="mike-label">\u270E MIKE:</span>' + mike[1] + "</div>");
+        continue;
+      }
+
       var h = line.match(/^(#{1,6})\s+(.*)$/);
       if (h) {
         closeList();
@@ -778,6 +797,36 @@
     }
   }
 
+  // findMikePlaceholders extracts every `<!-- MIKE: instruction -->` section
+  // from raw content. These mark the personal writing the human owns (the hook,
+  // cold open, closing) and must be filled before publishing (#54). The returned
+  // instructions are raw text; callers escape before inserting into the DOM.
+  function findMikePlaceholders(text) {
+    var out = [];
+    var re = /<!--\s*MIKE:\s*([\s\S]*?)-->/g;
+    var m;
+    while ((m = re.exec(String(text))) !== null) {
+      out.push(m[1].trim());
+    }
+    return out;
+  }
+
+  // showMikePlaceholders renders the banner listing the MIKE sections in the
+  // open file. An empty list hides the banner entirely.
+  function showMikePlaceholders(list) {
+    viewerMikeList.innerHTML = "";
+    if (!list || list.length === 0) {
+      viewerMike.style.display = "none";
+      return;
+    }
+    list.forEach(function (instruction) {
+      var li = document.createElement("li");
+      li.textContent = instruction || "(no instruction given)";
+      viewerMikeList.appendChild(li);
+    });
+    viewerMike.style.display = "block";
+  }
+
   // renderPreview paints the read-only view from the given text: rendered
   // Markdown for .md/.markdown, otherwise clean monospace with line breaks
   // preserved (textContent keeps it inert).
@@ -832,6 +881,7 @@
     viewerEditor.value = "";
     setEditingEnabled(false);
     showMode("preview");
+    showMikePlaceholders([]);
 
     fetch(fileReadURL(runID, name))
       .then(function (resp) {
@@ -846,6 +896,7 @@
         viewerEditor.value = text;
         renderPreview(text, name);
         showMode("preview");
+        showMikePlaceholders(findMikePlaceholders(text));
         setEditingEnabled(true);
         setViewerMessage("", false);
         viewerPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -889,6 +940,7 @@
         if (r.resp.ok && r.body.saved) {
           setViewerMessage("Saved " + viewerFile + ".", false);
           renderPreview(content, viewerFile);
+          showMikePlaceholders(findMikePlaceholders(content));
         } else {
           setViewerMessage(fileErrorMessage(r.resp.status, r.body, "save"), true);
         }
@@ -929,4 +981,302 @@
   });
   viewerSaveBtn.addEventListener("click", saveFile);
   viewerDownloadBtn.addEventListener("click", downloadFile);
+
+  // ----- Review + publish panel (#54) -----
+  //
+  // The run selected in Run History (#52) becomes the publish target. The panel
+  // collects a dev.to title/tags/published flag and POSTs to the existing
+  // POST /api/publish/devto with the selected run_id (the server reads post.md
+  // itself). Success shows the live URL (clickable) + article id; each failure
+  // maps to a clear, actionable message. No API key is ever entered, shown, or
+  // logged here: the key lives only in the Console's server environment.
+  //
+  // Legacy convenience helpers (Copy / Download) are offered only for the
+  // generated files that exist in the selected run (digest/LinkedIn text,
+  // youtube/script), reusing the #53 read + download URL builders.
+  var publishRunEl = document.getElementById("publish-run");
+  var legacyActionsEl = document.getElementById("legacy-actions");
+  var publishTitle = document.getElementById("publish-title");
+  var publishTags = document.getElementById("publish-tags");
+  var publishPublished = document.getElementById("publish-published");
+  var publishBtn = document.getElementById("publish-btn");
+  var publishResult = document.getElementById("publish-result");
+
+  var publishRunID = null;
+
+  // legacyActionsFor decides which helper controls a generated file gets. Only
+  // known legacy artefacts qualify; plain-text bodies (digest/LinkedIn) also get
+  // a Copy. basename ignores any one-level subdir prefix.
+  function legacyActionsFor(name) {
+    var base = String(name).split("/").pop().toLowerCase();
+    var isLegacy =
+      base.indexOf("digest") !== -1 ||
+      base.indexOf("linkedin") !== -1 ||
+      base.indexOf("youtube") !== -1 ||
+      base.indexOf("script") !== -1;
+    if (!isLegacy) { return null; }
+    return { copy: /\.(txt|md|markdown)$/.test(base), download: true };
+  }
+
+  // appendDimmedName fills a node with the file name, dimming any subdir prefix
+  // exactly like the #52 file list does.
+  function appendDimmedName(node, name) {
+    node.title = name;
+    var slash = name.indexOf("/");
+    if (slash !== -1) {
+      var dir = document.createElement("span");
+      dir.className = "file-dir";
+      dir.textContent = name.slice(0, slash + 1);
+      node.appendChild(dir);
+      node.appendChild(document.createTextNode(name.slice(slash + 1)));
+    } else {
+      node.textContent = name;
+    }
+  }
+
+  // copyToClipboard prefers the async Clipboard API and falls back to a hidden
+  // textarea + execCommand for older/insecure-context browsers.
+  function copyToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function (resolve, reject) {
+      try {
+        var ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        var ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+        if (ok) { resolve(); } else { reject(new Error("copy failed")); }
+      } catch (e) { reject(e); }
+    });
+  }
+
+  // flashButton briefly swaps a button's label to give click feedback.
+  function flashButton(btn, label) {
+    var prev = btn.getAttribute("data-label") || btn.textContent;
+    btn.setAttribute("data-label", prev);
+    btn.textContent = label;
+    setTimeout(function () { btn.textContent = btn.getAttribute("data-label") || prev; }, 1500);
+  }
+
+  // copyLegacy reads a file (reusing the #53 read URL) and copies its body.
+  function copyLegacy(runID, name, btn) {
+    fetch(fileReadURL(runID, name))
+      .then(function (resp) { if (!resp.ok) { throw new Error(String(resp.status)); } return resp.text(); })
+      .then(function (text) { return copyToClipboard(text); })
+      .then(function () { flashButton(btn, "Copied"); })
+      .catch(function () { flashButton(btn, "Copy failed"); });
+  }
+
+  // downloadLegacy triggers the attachment download via a transient anchor,
+  // reusing the #53 download URL builder so subdir names stay intact.
+  function downloadLegacy(runID, name) {
+    var a = document.createElement("a");
+    a.href = fileDownloadURL(runID, name);
+    a.download = String(name).split("/").pop();
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  // renderLegacyActions paints a Copy/Download row for each matching file in the
+  // selected run. Files that do not match show no controls (best-effort).
+  function renderLegacyActions(run) {
+    legacyActionsEl.innerHTML = "";
+    var files = (run && run.files) || [];
+    files.forEach(function (name) {
+      var spec = legacyActionsFor(name);
+      if (!spec) { return; }
+
+      var li = document.createElement("li");
+      var label = document.createElement("span");
+      label.className = "legacy-name";
+      appendDimmedName(label, name);
+      li.appendChild(label);
+
+      if (spec.copy) {
+        var copyBtn = document.createElement("button");
+        copyBtn.type = "button";
+        copyBtn.textContent = "Copy";
+        copyBtn.addEventListener("click", function () { copyLegacy(run.id, name, copyBtn); });
+        li.appendChild(copyBtn);
+      }
+      if (spec.download) {
+        var dlBtn = document.createElement("button");
+        dlBtn.type = "button";
+        dlBtn.textContent = "Download";
+        dlBtn.addEventListener("click", function () { downloadLegacy(run.id, name); });
+        li.appendChild(dlBtn);
+      }
+      legacyActionsEl.appendChild(li);
+    });
+  }
+
+  function clearPublishResult() {
+    publishResult.style.display = "none";
+    publishResult.className = "";
+    publishResult.innerHTML = "";
+  }
+
+  // onRunSelected makes the chosen run the publish target and renders its legacy
+  // helpers. Called from #52's selectRun (hoisted).
+  function onRunSelected(run) {
+    publishRunID = run.id;
+    publishRunEl.innerHTML = "";
+    publishRunEl.appendChild(document.createTextNode("Reviewing run "));
+    var span = document.createElement("span");
+    span.className = "run-id";
+    span.textContent = run.id;
+    publishRunEl.appendChild(span);
+    publishRunEl.appendChild(document.createTextNode(". Open its files above to review, then publish below."));
+    publishBtn.disabled = false;
+    clearPublishResult();
+    renderLegacyActions(run);
+  }
+
+  // resetPublishPanel returns the panel to its no-run-selected state. Called
+  // from #52's renderRuns (hoisted).
+  function resetPublishPanel() {
+    publishRunID = null;
+    publishRunEl.innerHTML = "";
+    var none = document.createElement("span");
+    none.className = "none";
+    none.textContent = "Select a run in Run History to review and publish it.";
+    publishRunEl.appendChild(none);
+    legacyActionsEl.innerHTML = "";
+    publishBtn.disabled = true;
+    clearPublishResult();
+  }
+
+  function showPublishPending() {
+    publishResult.className = "";
+    publishResult.textContent = "Publishing to dev.to...";
+    publishResult.style.display = "block";
+  }
+
+  function showPublishError(msg) {
+    publishResult.className = "error";
+    publishResult.textContent = msg;
+    publishResult.style.display = "block";
+  }
+
+  function showPublishSuccess(body) {
+    publishResult.className = "success";
+    publishResult.innerHTML = "";
+    var head = document.createElement("strong");
+    head.textContent = "Published to dev.to.";
+    publishResult.appendChild(head);
+
+    // Only treat the returned URL as a link if it is a real http(s) URL; never
+    // trust an arbitrary scheme from an upstream response.
+    if (body.url && /^https?:\/\//i.test(body.url)) {
+      var urlLine = document.createElement("span");
+      urlLine.className = "publish-meta";
+      urlLine.appendChild(document.createTextNode("URL: "));
+      var a = document.createElement("a");
+      a.href = body.url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.textContent = body.url;
+      urlLine.appendChild(a);
+      publishResult.appendChild(urlLine);
+    } else if (body.url) {
+      var urlText = document.createElement("span");
+      urlText.className = "publish-meta";
+      urlText.textContent = "URL: " + body.url;
+      publishResult.appendChild(urlText);
+    }
+
+    if (typeof body.id === "number" && body.id) {
+      var idLine = document.createElement("span");
+      idLine.className = "publish-meta";
+      idLine.textContent = "Article ID: " + body.id;
+      publishResult.appendChild(idLine);
+    }
+    publishResult.style.display = "block";
+  }
+
+  // handlePublishResponse maps each documented status to a clear message. The
+  // server never returns the API key in any field, so nothing secret is shown.
+  function handlePublishResponse(status, body) {
+    body = body || {};
+    if (status === 201 && body.success) {
+      showPublishSuccess(body);
+      return;
+    }
+    if (status === 400 && body.error === "missing_api_key") {
+      showPublishError("Set DEVTO_API_KEY in the Console's environment, then publish again.");
+      return;
+    }
+    if (status === 404) {
+      showPublishError("No post.md was found for this run. Generate a blog post for it before publishing to dev.to.");
+      return;
+    }
+    if (status === 502) {
+      if (body.status_code) {
+        showPublishError("dev.to rejected the publish (HTTP " + body.status_code + ")." +
+          (body.error ? " " + body.error : ""));
+      } else {
+        showPublishError("Couldn't reach dev.to." +
+          (body.error ? " " + body.error : " Check the connection and try again."));
+      }
+      return;
+    }
+    if (status === 422) {
+      showPublishError(body.detail || "The publish request was invalid.");
+      return;
+    }
+    showPublishError(body.detail || body.error || "Publishing failed. Please try again.");
+  }
+
+  // publishToDevto collects the form values + selected run_id and calls the
+  // existing publish endpoint. The button is disabled while in flight.
+  function publishToDevto() {
+    if (!publishRunID) {
+      showPublishError("Select a run in Run History first.");
+      return;
+    }
+    var title = publishTitle.value.trim();
+    var tags = publishTags.value
+      .split(",")
+      .map(function (t) { return t.trim(); })
+      .filter(function (t) { return t.length > 0; });
+
+    publishBtn.disabled = true;
+    showPublishPending();
+
+    fetch("/api/publish/devto", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        run_id: publishRunID,
+        title: title,
+        tags: tags,
+        published: publishPublished.checked
+      })
+    })
+      .then(function (resp) {
+        return resp.json().catch(function () { return {}; }).then(function (body) {
+          return { resp: resp, body: body };
+        });
+      })
+      .then(function (r) {
+        publishBtn.disabled = false;
+        handlePublishResponse(r.resp.status, r.body);
+      })
+      .catch(function () {
+        publishBtn.disabled = false;
+        showPublishError("Could not reach the Console to publish. Check it's running and try again.");
+      });
+  }
+
+  publishBtn.addEventListener("click", publishToDevto);
+
+  // Start in the no-run-selected state.
+  resetPublishPanel();
 })();
