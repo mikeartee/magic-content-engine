@@ -596,4 +596,337 @@
 
   // Populate the run history on load (#52).
   loadRuns();
+
+  // ----- In-app file viewer/editor + download (#53) -----
+  //
+  // Clicking a #52 file entry (a `.run-file` button carrying data-run-id +
+  // data-file) opens the file IN the Console window: its content loads into a
+  // viewer pane, rendered readably (a tiny in-house XSS-safe Markdown renderer
+  // for .md/.markdown, clean monospace for everything else) with an editable
+  // textarea behind a Preview/Edit toggle. Save POSTs the edited content via
+  // POST /api/runs/{id}/file; Download triggers GET
+  // /api/runs/{id}/download/{file...}. Traversal (403) and not-found (404)
+  // surface as friendly inline messages, never crashes. Names with one subdir
+  // segment ("subdir/filename") are URL-encoded correctly for each transport:
+  // the read uses ?name=<encoded> (slash percent-encoded), the download uses a
+  // path of per-segment-encoded parts joined by literal slashes. No heavy
+  // dependency is added; the renderer escapes HTML first, then applies a small
+  // set of Markdown rules.
+  var viewerPanel = document.getElementById("viewer-panel");
+  var viewerFilename = document.getElementById("viewer-filename");
+  var viewerMessage = document.getElementById("viewer-message");
+  var viewerRendered = document.getElementById("viewer-rendered");
+  var viewerEditor = document.getElementById("viewer-editor");
+  var viewerPreviewBtn = document.getElementById("viewer-preview-btn");
+  var viewerEditBtn = document.getElementById("viewer-edit-btn");
+  var viewerSaveBtn = document.getElementById("viewer-save-btn");
+  var viewerDownloadBtn = document.getElementById("viewer-download-btn");
+
+  var viewerRunID = null;   // run_id of the file currently open
+  var viewerFile = null;    // name (may be "subdir/filename") currently open
+  var viewerMode = "preview";
+
+  function isMarkdown(name) {
+    return /\.(md|markdown)$/i.test(name || "");
+  }
+
+  // escapeHtml neutralises every HTML-significant character so nothing in a
+  // file's bytes can inject markup. The Markdown renderer runs only AFTER this,
+  // and only ever wraps already-escaped text in a fixed set of safe tags.
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  // renderInline applies inline Markdown (code spans, links, bold, italic) to a
+  // single already-escaped line. Inline code is pulled out first so emphasis
+  // markers inside it are left alone, then restored last. Link URLs are limited
+  // to http(s)/relative/anchor/mailto so no javascript: URL can slip through.
+  function renderInline(text) {
+    var codes = [];
+    text = text.replace(/`([^`]+)`/g, function (_m, c) {
+      codes.push(c);
+      return "\u0000" + (codes.length - 1) + "\u0000";
+    });
+    text = text.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function (m, label, url) {
+      if (!/^(https?:\/\/|\/|#|mailto:)/i.test(url)) { return m; }
+      return '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + label + "</a>";
+    });
+    text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    text = text.replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>");
+    text = text.replace(/(^|[^_\w])_([^_\s][^_]*)_/g, "$1<em>$2</em>");
+    text = text.replace(/\u0000(\d+)\u0000/g, function (_m, i) {
+      return "<code>" + codes[parseInt(i, 10)] + "</code>";
+    });
+    return text;
+  }
+
+  // renderMarkdown turns raw Markdown into safe HTML. It escapes the whole
+  // document first (so the structural pass only ever sees inert text), then
+  // walks line by line recognising fenced code, headings, horizontal rules,
+  // blockquotes, ordered/unordered lists, and paragraphs.
+  function renderMarkdown(raw) {
+    var lines = escapeHtml(raw).split(/\r?\n/);
+    var html = [];
+    var inCode = false;
+    var codeBuf = [];
+    var listType = null;
+
+    function closeList() {
+      if (listType) { html.push("</" + listType + ">"); listType = null; }
+    }
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+
+      if (/^\s*```/.test(line)) {
+        if (inCode) {
+          html.push("<pre><code>" + codeBuf.join("\n") + "</code></pre>");
+          codeBuf = [];
+          inCode = false;
+        } else {
+          closeList();
+          inCode = true;
+        }
+        continue;
+      }
+      if (inCode) { codeBuf.push(line); continue; }
+
+      if (/^\s*$/.test(line)) { closeList(); continue; }
+
+      var h = line.match(/^(#{1,6})\s+(.*)$/);
+      if (h) {
+        closeList();
+        var level = h[1].length;
+        html.push("<h" + level + ">" + renderInline(h[2]) + "</h" + level + ">");
+        continue;
+      }
+
+      if (/^\s*(---|\*\*\*|___)\s*$/.test(line)) {
+        closeList();
+        html.push("<hr>");
+        continue;
+      }
+
+      var bq = line.match(/^\s*&gt;\s?(.*)$/);
+      if (bq) {
+        closeList();
+        html.push("<blockquote>" + renderInline(bq[1]) + "</blockquote>");
+        continue;
+      }
+
+      var ul = line.match(/^\s*[-*+]\s+(.*)$/);
+      if (ul) {
+        if (listType !== "ul") { closeList(); html.push("<ul>"); listType = "ul"; }
+        html.push("<li>" + renderInline(ul[1]) + "</li>");
+        continue;
+      }
+
+      var ol = line.match(/^\s*\d+\.\s+(.*)$/);
+      if (ol) {
+        if (listType !== "ol") { closeList(); html.push("<ol>"); listType = "ol"; }
+        html.push("<li>" + renderInline(ol[1]) + "</li>");
+        continue;
+      }
+
+      closeList();
+      html.push("<p>" + renderInline(line) + "</p>");
+    }
+    if (inCode) { html.push("<pre><code>" + codeBuf.join("\n") + "</code></pre>"); }
+    closeList();
+    return html.join("\n");
+  }
+
+  // fileReadURL builds the read URL. encodeURIComponent percent-encodes the
+  // slash in a "subdir/filename" name, which the server decodes back to a single
+  // subdir segment (Requirement 4.3).
+  function fileReadURL(runID, name) {
+    return "/api/runs/" + encodeURIComponent(runID) + "/file?name=" + encodeURIComponent(name);
+  }
+
+  // fileDownloadURL builds the download URL. The route is a path wildcard
+  // (/download/{file...}), so each segment is encoded independently and rejoined
+  // with literal slashes, keeping a one-level subdir intact.
+  function fileDownloadURL(runID, name) {
+    var segs = String(name).split("/").map(encodeURIComponent);
+    return "/api/runs/" + encodeURIComponent(runID) + "/download/" + segs.join("/");
+  }
+
+  function setViewerMessage(text, isError) {
+    viewerMessage.textContent = text || "";
+    viewerMessage.className = isError ? "viewer-message error" : "viewer-message";
+  }
+
+  // setViewerFilename shows the open file, dimming the directory segment so a
+  // "subdir/filename" reads the same way it does in the #52 file list.
+  function setViewerFilename(name) {
+    viewerFilename.innerHTML = "";
+    viewerFilename.title = name;
+    var slash = name.indexOf("/");
+    if (slash !== -1) {
+      var dir = document.createElement("span");
+      dir.className = "file-dir";
+      dir.textContent = name.slice(0, slash + 1);
+      viewerFilename.appendChild(dir);
+      viewerFilename.appendChild(document.createTextNode(name.slice(slash + 1)));
+    } else {
+      viewerFilename.textContent = name;
+    }
+  }
+
+  // renderPreview paints the read-only view from the given text: rendered
+  // Markdown for .md/.markdown, otherwise clean monospace with line breaks
+  // preserved (textContent keeps it inert).
+  function renderPreview(text, name) {
+    if (isMarkdown(name)) {
+      viewerRendered.className = "viewer-rendered markdown";
+      viewerRendered.innerHTML = renderMarkdown(text);
+    } else {
+      viewerRendered.className = "viewer-rendered plain";
+      viewerRendered.innerHTML = "";
+      var pre = document.createElement("pre");
+      pre.textContent = text;
+      viewerRendered.appendChild(pre);
+    }
+  }
+
+  // showMode toggles between the rendered preview and the editable textarea and
+  // marks the active tab. Switching to Preview re-renders from the textarea so
+  // the preview always reflects unsaved edits.
+  function showMode(mode) {
+    viewerMode = mode;
+    if (mode === "edit") {
+      viewerRendered.style.display = "none";
+      viewerEditor.style.display = "block";
+      viewerEditBtn.classList.add("active");
+      viewerPreviewBtn.classList.remove("active");
+    } else {
+      renderPreview(viewerEditor.value, viewerFile || "");
+      viewerRendered.style.display = "block";
+      viewerEditor.style.display = "none";
+      viewerPreviewBtn.classList.add("active");
+      viewerEditBtn.classList.remove("active");
+    }
+  }
+
+  function setEditingEnabled(enabled) {
+    viewerEditBtn.disabled = !enabled;
+    viewerSaveBtn.disabled = !enabled;
+    viewerDownloadBtn.disabled = !enabled;
+  }
+
+  // openFile loads a file's content into the viewer pane. A 403 (traversal) or
+  // 404 (not found) is shown as a friendly inline message instead of crashing.
+  function openFile(runID, name) {
+    viewerRunID = runID;
+    viewerFile = name;
+    viewerPanel.style.display = "block";
+    setViewerFilename(name);
+    setViewerMessage("Loading " + name + "...", false);
+    viewerRendered.className = "viewer-rendered";
+    viewerRendered.innerHTML = "";
+    viewerEditor.value = "";
+    setEditingEnabled(false);
+    showMode("preview");
+
+    fetch(fileReadURL(runID, name))
+      .then(function (resp) {
+        if (!resp.ok) {
+          return resp.json().catch(function () { return {}; }).then(function (body) {
+            throw { status: resp.status, detail: body.detail || body.error };
+          });
+        }
+        return resp.text();
+      })
+      .then(function (text) {
+        viewerEditor.value = text;
+        renderPreview(text, name);
+        showMode("preview");
+        setEditingEnabled(true);
+        setViewerMessage("", false);
+        viewerPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      })
+      .catch(function (err) {
+        setViewerMessage(fileErrorMessage(err && err.status, err, "open"), true);
+        setEditingEnabled(false);
+      });
+  }
+
+  // fileErrorMessage turns a status/body into a friendly, action-specific note.
+  function fileErrorMessage(status, body, action) {
+    var verb = action === "save" ? "Nothing was saved." : "Nothing was opened.";
+    if (status === 403) { return "That file path isn't allowed (403 forbidden). " + verb; }
+    if (status === 404) { return "That file could not be found (404). It may have been moved or deleted."; }
+    if (status === 422) { return "Could not save: " + ((body && body.detail) || "the content is empty."); }
+    if (body && body.detail) { return "Could not " + (action || "open") + " the file: " + body.detail; }
+    return "Could not reach the Console to " + (action || "open") + " the file.";
+  }
+
+  // saveFile POSTs the edited content. Success shows a confirmation and refreshes
+  // the preview; 403/404/422 and network failures surface inline.
+  function saveFile() {
+    if (!viewerRunID || !viewerFile) { return; }
+    var content = viewerEditor.value;
+    setEditingEnabled(false);
+    setViewerMessage("Saving " + viewerFile + "...", false);
+
+    fetch("/api/runs/" + encodeURIComponent(viewerRunID) + "/file", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: viewerFile, content: content })
+    })
+      .then(function (resp) {
+        return resp.json().catch(function () { return {}; }).then(function (body) {
+          return { resp: resp, body: body };
+        });
+      })
+      .then(function (r) {
+        setEditingEnabled(true);
+        if (r.resp.ok && r.body.saved) {
+          setViewerMessage("Saved " + viewerFile + ".", false);
+          renderPreview(content, viewerFile);
+        } else {
+          setViewerMessage(fileErrorMessage(r.resp.status, r.body, "save"), true);
+        }
+      })
+      .catch(function () {
+        setEditingEnabled(true);
+        setViewerMessage("Could not reach the Console to save the file.", true);
+      });
+  }
+
+  // downloadFile triggers the attachment download via a transient anchor, so the
+  // Console window itself never navigates away.
+  function downloadFile() {
+    if (!viewerRunID || !viewerFile) { return; }
+    var a = document.createElement("a");
+    a.href = fileDownloadURL(viewerRunID, viewerFile);
+    a.download = String(viewerFile).split("/").pop();
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setViewerMessage("Downloading " + viewerFile + "...", false);
+  }
+
+  // A single delegated listener handles every #52 file entry, including those
+  // rendered after this code runs (selecting a different run re-paints the list).
+  runFilesList.addEventListener("click", function (e) {
+    var btn = e.target.closest ? e.target.closest(".run-file") : null;
+    if (!btn || !runFilesList.contains(btn)) { return; }
+    var runID = btn.getAttribute("data-run-id");
+    var name = btn.getAttribute("data-file");
+    if (runID && name) { openFile(runID, name); }
+  });
+
+  viewerPreviewBtn.addEventListener("click", function () { showMode("preview"); });
+  viewerEditBtn.addEventListener("click", function () {
+    showMode("edit");
+    viewerEditor.focus();
+  });
+  viewerSaveBtn.addEventListener("click", saveFile);
+  viewerDownloadBtn.addEventListener("click", downloadFile);
 })();

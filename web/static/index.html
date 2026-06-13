@@ -111,6 +111,74 @@
     }
     #run-files-list .run-file .file-dir { color: #6b7785; }
     #runs-empty, #run-files-empty { margin: 0; color: #9aa7b2; font-size: 0.9rem; }
+
+    /* In-app file viewer/editor (#53) */
+    #viewer-panel { display: none; }
+    .viewer-head {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 0.75rem; flex-wrap: wrap; margin: 0 0 0.75rem;
+    }
+    .viewer-filename {
+      font-weight: 600; color: #cdd6df; font-size: 0.95rem;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+    }
+    .viewer-filename .file-dir { color: #6b7785; }
+    .viewer-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .viewer-actions button {
+      padding: 0.4rem 0.85rem; font-size: 0.85rem; font-weight: 600;
+      background: #243240; color: #e6e6e6; border: 1px solid #2f4456; border-radius: 6px;
+    }
+    .viewer-actions button:hover:not(:disabled) { background: #2c3e50; border-color: #2563eb; }
+    .viewer-actions button.active { background: #18222e; border-color: #2563eb; color: #6db3f2; }
+    .viewer-actions button#viewer-save-btn { background: #1f8b4c; border-color: #1f8b4c; }
+    .viewer-actions button#viewer-save-btn:hover:not(:disabled) { background: #24a259; }
+    .viewer-actions button:disabled { background: #1a232e; border-color: #243240; color: #5a6b7a; cursor: not-allowed; }
+    .viewer-message { margin: 0 0 0.75rem; min-height: 1.2rem; font-size: 0.9rem; color: #7fe0a6; }
+    .viewer-message.error { color: #f08a8a; }
+    .viewer-message:empty { display: none; }
+    .viewer-rendered {
+      background: #0b0f14; border: 1px solid #243240; border-radius: 6px;
+      padding: 0.85rem 1rem; max-height: 28rem; overflow: auto;
+      font-size: 0.95rem; line-height: 1.55; color: #e6e6e6;
+    }
+    .viewer-rendered.plain pre, .viewer-rendered pre {
+      margin: 0; white-space: pre-wrap; word-break: break-word;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.88rem; color: #cdd6df;
+    }
+    .viewer-rendered.markdown h1, .viewer-rendered.markdown h2, .viewer-rendered.markdown h3,
+    .viewer-rendered.markdown h4, .viewer-rendered.markdown h5, .viewer-rendered.markdown h6 {
+      margin: 1rem 0 0.5rem; line-height: 1.25; color: #f0f3f6;
+    }
+    .viewer-rendered.markdown h1 { font-size: 1.5rem; border-bottom: 1px solid #243240; padding-bottom: 0.3rem; }
+    .viewer-rendered.markdown h2 { font-size: 1.25rem; border-bottom: 1px solid #1b2530; padding-bottom: 0.25rem; }
+    .viewer-rendered.markdown h3 { font-size: 1.1rem; }
+    .viewer-rendered.markdown > :first-child { margin-top: 0; }
+    .viewer-rendered.markdown p { margin: 0.5rem 0; }
+    .viewer-rendered.markdown ul, .viewer-rendered.markdown ol { margin: 0.5rem 0; padding-left: 1.5rem; }
+    .viewer-rendered.markdown li { margin: 0.2rem 0; }
+    .viewer-rendered.markdown blockquote {
+      margin: 0.5rem 0; padding: 0.1rem 0.9rem; border-left: 3px solid #2563eb;
+      color: #9aa7b2; background: #131b24;
+    }
+    .viewer-rendered.markdown code {
+      background: #131b24; padding: 0.1rem 0.35rem; border-radius: 4px;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.85em; color: #6db3f2;
+    }
+    .viewer-rendered.markdown pre {
+      background: #131b24; padding: 0.75rem 0.9rem; border-radius: 6px; overflow-x: auto;
+    }
+    .viewer-rendered.markdown pre code { background: none; padding: 0; color: #cdd6df; }
+    .viewer-rendered.markdown a { color: #6db3f2; }
+    .viewer-rendered.markdown hr { border: 0; border-top: 1px solid #243240; margin: 1rem 0; }
+    .viewer-editor {
+      display: none; width: 100%; box-sizing: border-box; min-height: 18rem; max-height: 28rem;
+      padding: 0.85rem 1rem; background: #0b0f14; border: 1px solid #243240; border-radius: 6px;
+      color: #e6e6e6; font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.88rem; line-height: 1.55; resize: vertical;
+    }
+    .viewer-editor:focus { outline: none; border-color: #2563eb; }
   </style>
 </head>
 <body>
@@ -180,6 +248,22 @@
           <p id="run-files-empty"></p>
         </div>
       </div>
+    </fieldset>
+
+    <fieldset id="viewer-panel" aria-label="File viewer">
+      <legend>File Viewer</legend>
+      <div class="viewer-head">
+        <span class="viewer-filename" id="viewer-filename"></span>
+        <div class="viewer-actions">
+          <button type="button" id="viewer-preview-btn">Preview</button>
+          <button type="button" id="viewer-edit-btn">Edit</button>
+          <button type="button" id="viewer-save-btn">Save</button>
+          <button type="button" id="viewer-download-btn">Download</button>
+        </div>
+      </div>
+      <p class="viewer-message" id="viewer-message" role="status" aria-live="polite"></p>
+      <div class="viewer-rendered" id="viewer-rendered"></div>
+      <textarea class="viewer-editor" id="viewer-editor" spellcheck="false" aria-label="File content editor"></textarea>
     </fieldset>
   </main>
 
