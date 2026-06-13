@@ -588,3 +588,141 @@ class TestPropertyBased:
         assert a.url == url
         assert a.source == source
         assert a.summary == summary
+
+
+# ---------------------------------------------------------------------------
+# 6. articles_crawled field (raw count before scoring) — Issue #59
+# ---------------------------------------------------------------------------
+
+
+class TestArticlesCrawledField:
+    """The raw crawled count must thread through ResearchBrief.
+
+    Issue #59: the Console KPI tiles need the raw crawled count alongside
+    the scored-above-threshold (kept) count. ``articles_crawled`` carries the
+    total number of articles crawled before scoring filtered them.
+    """
+
+    def _make_brief(self, articles_crawled: int = 10) -> ResearchBrief:
+        return ResearchBrief(
+            articles=[
+                ScoredArticle(
+                    title="Kiro IDE 1.0",
+                    url="https://kiro.dev/changelog/ide/",
+                    source="kiro.dev/changelog/ide/",
+                    relevance_score=5,
+                    summary="Kiro IDE 1.0 released with new features.",
+                )
+            ],
+            sources_crawled=["kiro.dev/changelog/ide/"],
+            sources_failed=[],
+            run_timestamp="2025-07-14T09:00:00+00:00",
+            articles_crawled=articles_crawled,
+        )
+
+    def test_field_defaults_to_zero(self) -> None:
+        """Existing constructors that omit articles_crawled still work."""
+        brief = ResearchBrief(
+            articles=[],
+            sources_crawled=[],
+            sources_failed=[],
+            run_timestamp="2025-07-14T09:00:00+00:00",
+        )
+        assert brief.articles_crawled == 0
+
+    def test_field_carries_raw_count(self) -> None:
+        brief = self._make_brief(articles_crawled=42)
+        assert brief.articles_crawled == 42
+
+    def test_to_dict_includes_articles_crawled(self) -> None:
+        brief = self._make_brief(articles_crawled=7)
+        d = brief.to_dict()
+        assert d["articles_crawled"] == 7
+        # still JSON serialisable
+        assert isinstance(json.dumps(d), str)
+
+    def test_round_trip_preserves_articles_crawled(self) -> None:
+        brief = self._make_brief(articles_crawled=15)
+        restored = ResearchBrief.from_dict(json.loads(json.dumps(brief.to_dict())))
+        assert restored.articles_crawled == 15
+        # other fields still intact
+        assert restored.sources_crawled == brief.sources_crawled
+        assert len(restored.articles) == len(brief.articles)
+
+    def test_from_dict_tolerates_missing_articles_crawled(self) -> None:
+        """An older dict lacking articles_crawled defaults the field to 0."""
+        legacy = {
+            "articles": [
+                {
+                    "title": "Test",
+                    "url": "https://example.com",
+                    "source": "example.com",
+                    "relevance_score": 3,
+                    "summary": "A test article.",
+                }
+            ],
+            "sources_crawled": ["example.com"],
+            "sources_failed": [],
+            "run_timestamp": "2025-07-14T09:00:00+00:00",
+            # NOTE: no "articles_crawled" key
+        }
+        brief = ResearchBrief.from_dict(legacy)
+        assert brief.articles_crawled == 0
+        assert brief.articles[0].title == "Test"
+
+
+# ---------------------------------------------------------------------------
+# 7. Handler threads raw crawled count into ResearchBrief — Issue #59
+# ---------------------------------------------------------------------------
+
+
+class TestHandlerThreadsArticlesCrawled:
+    """The researcher entry point must carry len(raw_articles) into the brief.
+
+    All crawl/scoring/vault/Bedrock calls are stubbed so there are NO real
+    network or AWS calls.
+    """
+
+    def test_handler_sets_articles_crawled_to_raw_count(self) -> None:
+        from magic_content_engine.bullpen import researcher as researcher_mod
+
+        raw_articles = [
+            _make_raw(url=f"https://example.com/{i}") for i in range(6)
+        ]
+        # Only 2 survive scoring (kept)
+        scored = [
+            ScoredArticle(
+                title="A",
+                url="https://example.com/0",
+                source="example.com",
+                relevance_score=5,
+                summary="kept",
+            ),
+            ScoredArticle(
+                title="B",
+                url="https://example.com/1",
+                source="example.com",
+                relevance_score=4,
+                summary="kept",
+            ),
+        ]
+
+        with patch.object(
+            researcher_mod, "read_vault_notes", return_value=[]
+        ), patch.object(
+            researcher_mod,
+            "crawl_all_sources",
+            return_value=(raw_articles, ["src-a", "src-b"], ["src-c"]),
+        ), patch.object(
+            researcher_mod, "_make_bedrock_scorer", return_value=_fake_llm(5)
+        ), patch.object(
+            researcher_mod, "score_articles", return_value=scored
+        ):
+            result = researcher_mod.handler({"topic": "Kiro IDE"}, context=None)
+
+        # Raw crawled count = len(raw_articles) = 6
+        assert result["articles_crawled"] == 6
+        # Kept (scored) count = len(scored) = 2
+        assert len(result["articles"]) == 2
+        assert result["sources_crawled"] == ["src-a", "src-b"]
+        assert result["sources_failed"] == ["src-c"]
